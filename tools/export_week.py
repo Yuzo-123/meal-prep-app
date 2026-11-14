@@ -84,6 +84,29 @@ def main():
                 photos[rid] = "data:image/jpeg;base64," + base64.b64encode(open(p, "rb").read()).decode("ascii")
     bundle["photos"] = photos
 
+    # 日曜の段取り（手順・下準備は lio が自分の言葉で plan.json に書いたもの。材料は日曜に作る品のぶんを集計）。
+    # 集計は projects/meal-prep/scripts/week.py の道具を借りる（本の全データを読むのは Mac の中だけ。
+    # 書き出すのは買い物リストと同じく材料名と合計量まで）。
+    sun = plan.get("sunday") or {}
+    if sun:
+        steps = []
+        for s in sun.get("steps", []):
+            r = R.get(s.get("id"))
+            steps.append({"at": s.get("at", ""), "where": s.get("where", ""), "do": s.get("do", ""),
+                          "title": s.get("title") or (r["name"] if r else ""),
+                          "print_page": r["print_page"] if r else None})
+        materials = {"items": [], "pantry": []}
+        try:
+            sys.path.insert(0, os.path.join(root, "scripts"))
+            import week as week_tool
+            items, pantry, _ = week_tool.shopping({"cook_sunday": plan.get("cook_sunday", []), "days": {}}, week_tool.load())
+            materials = {"items": [row(i, ("name", "amount", "for")) for i in items], "pantry": pantry}
+        except Exception as e:  # 道具が変わっていても、手順と下準備だけは出す
+            print("注意: 日曜の材料を集計できませんでした（%s）。手順と下準備だけ書き出します" % e)
+        bundle["sunday"] = {"assume": sun.get("assume", ""), "before": sun.get("before", []),
+                            "cut": [row(c, ("what", "how", "for")) for c in sun.get("cut", [])],
+                            "steps": steps, "materials": materials}
+
     out = os.path.join(week_dir, "app_week.json")
     json.dump(bundle, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     n = sum(len(v["朝"]) + len(v["夜"]) for v in days.values())

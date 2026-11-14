@@ -112,6 +112,24 @@ export function cookRows(bundle) {
   }));
 }
 
+// 日曜の段取り（手順・材料・下準備）。週のデータに入っていなければ空で返す。
+export function sundayPlan(bundle) {
+  const s = (bundle && bundle.sunday) || {};
+  const mat = s.materials || {};
+  return {
+    has: !!(s.steps && s.steps.length),
+    assume: s.assume || "",
+    steps: (s.steps || []).map((x) => ({
+      key: `step:${x.at}|${x.title || x.name || ""}`, at: x.at || "", where: x.where || "",
+      title: x.title || x.name || "", page: x.print_page ?? null, text: x.do || "",
+    })),
+    materials: (mat.items || []).map((x) => ({ key: "mat:" + x.name, name: x.name, amount: x.amount || "", sub: (x.for || []).join("・") })),
+    pantry: mat.pantry || [],
+    before: (s.before || []).map((t) => ({ key: "before:" + t, text: t })),
+    cut: (s.cut || []).map((c) => ({ key: "cut:" + c.what, name: c.what, how: c.how || "", for: c.for || "" })),
+  };
+}
+
 export function isDone(state, week, key) {
   const c = home(state).checks[week];
   return !!(c && c[key] && c[key].done);

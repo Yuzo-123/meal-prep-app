@@ -2,7 +2,7 @@
 import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 
-export const APP_VERSION = "0.2.0"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.3.0"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -102,8 +102,33 @@ function renderShop(w) {
   $$("#shoppills .pill").forEach((p) => p.addEventListener("click", () => { aisle = p.dataset.aisle; refreshChecks(); }));
 }
 
+function checkRow(key, cls, body, right = "") {
+  return `<label class="row ${cls}" data-key="${esc(key)}"><input type="checkbox"><span class="box"></span><span class="body">${body}</span>${right}</label>`;
+}
+
 function renderCook(w) {
   $("#cooklist").innerHTML = M.cookRows(w).map((r) => rowHtml(r, r.page != null ? `<span class="amt pg">P.${esc(r.page)}</span>` : "")).join("");
+  const s = M.sundayPlan(w);
+  $("#assume").textContent = s.assume;
+  $("#steplist").innerHTML = s.steps.map((x) => checkRow(x.key, "step",
+    `<span class="when"><i>${esc(x.at)}</i>${esc(x.where)}</span><b>${esc(x.title)} ${x.page != null ? `<span class="pg">P.${esc(x.page)}</span>` : ""}</b><small class="wr">${esc(x.text)}</small>`)).join("");
+  $("#matlist").innerHTML = s.materials.map((x) => checkRow(x.key, "",
+    `<b>${esc(x.name)}</b><small>${esc(x.sub)}</small>`, `<span class="amt">${esc(x.amount)}</span>`)).join("");
+  $("#matpantry").innerHTML = s.pantry.map((p) => `<span>${esc(p)}</span>`).join("");
+  $("#beforelist").innerHTML = s.before.map((x) => checkRow(x.key, "", `<b class="wr">${esc(x.text)}</b>`)).join("");
+  $("#cutlist").innerHTML = s.cut.map((x) => checkRow(x.key, "",
+    `<b>${esc(x.name)}</b><small class="wr">${esc(x.how)}</small>`, `<span class="amt for">${esc(x.for)}</span>`)).join("");
+  $$("#sunpills .pill").forEach((p) => { p.onclick = () => setSun(p.dataset.sun); });
+  setSun(s.has ? pref("sun") || "steps" : "dish");
+}
+
+function setSun(name) {
+  const w = M.currentWeek(state);
+  const has = w ? M.sundayPlan(w).has : false;
+  pref("sun", name);
+  $$("#sunpills .pill").forEach((p) => p.classList.toggle("on", p.dataset.sun === name));
+  $$(".sun").forEach((s) => { s.hidden = s.dataset.sun !== name; });
+  $("#sunempty").hidden = has || name === "dish";
 }
 
 function bindRows() {

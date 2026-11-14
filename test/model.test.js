@@ -96,6 +96,29 @@ test("写真の欄に画像でないものが入っていても出さない", ()
   assert.equal(M.photoOf(bundle(), "r1"), null); // 写真なしの週も読める
 });
 
+test("日曜の段取りは、入っていれば手順・材料・下準備に分かれ、無い週は空で返る", () => {
+  assert.equal(M.sundayPlan(bundle()).has, false);
+  assert.deepEqual(M.sundayPlan(bundle()).steps, []);
+  const a = bundle();
+  a.sunday = {
+    assume: "コンロ 2 口", before: ["卵を出しておく"], cut: [{ what: "にんじん", how: "せん切り", for: "ナムル" }],
+    steps: [{ at: "0:00", where: "コンロ①", title: "煮豚", print_page: 40, do: "最初に煮る" }, { at: "0:15", where: "まな板", title: "切る", do: "まとめて" }],
+    materials: { items: [{ name: "にんじん", amount: "2本", for: ["ナムル"] }], pantry: ["塩"] },
+  };
+  const s = M.sundayPlan(a);
+  assert.equal(s.has, true);
+  assert.equal(s.steps.length, 2);
+  assert.equal(s.steps[0].page, 40);
+  assert.equal(s.steps[1].page, null);
+  assert.equal(new Set(s.steps.map((x) => x.key)).size, 2); // 鍵が重ならない
+  assert.equal(s.materials[0].key, "mat:にんじん");
+  assert.equal(s.cut[0].for, "ナムル");
+  let st = M.importBundle(M.emptyState(), a);
+  st = M.toggleCheck(st, "2026-11-16", s.steps[0].key, true);
+  st = M.clearChecks(st, "2026-11-16", ["step"]);
+  assert.equal(M.isDone(st, "2026-11-16", s.steps[0].key), false);
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
