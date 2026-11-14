@@ -2,7 +2,7 @@
 import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 
-export const APP_VERSION = "0.1.0"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.2.0"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -10,8 +10,12 @@ const $$ = (q, r = document) => Array.from(r.querySelectorAll(q));
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function commit(next) {
+  if (!save(next)) {
+    toast("端末に保存できませんでした（空きが足りません）");
+    return false;
+  }
   state = next;
-  if (!save(state)) toast("端末に保存できませんでした");
+  return true;
 }
 
 function toast(msg) {
@@ -33,7 +37,13 @@ function showTab(name) {
 // ---------- 献立 ----------
 let dayFilter = "all";
 
-function dishCard(d) {
+function dishCard(d, w) {
+  const src = M.photoOf(w, d.id);
+  const pic = src ? `<img class="pic" src="${esc(src)}" alt="" loading="lazy">` : "";
+  return dishCardBody(d).replace('<article class="card">', `<article class="card${src ? " haspic" : ""}">${pic}`);
+}
+
+function dishCardBody(d) {
   if (d.home) {
     return `<article class="card"><div class="tag home"><i></i>家にある</div><h4>${esc(d.name)}</h4></article>`;
   }
@@ -55,7 +65,7 @@ function renderMenu(w) {
   $("#panels").innerHTML = dates.map((d) => {
     const meals = (w.days || {})[d.day] || {};
     const body = M.MEALS.map((m) =>
-      `<div class="mealhead">${m}</div><div class="grid">${(meals[m] || []).map(dishCard).join("")}</div>`).join("");
+      `<div class="mealhead">${m}</div><div class="grid">${(meals[m] || []).map((d) => dishCard(d, w)).join("")}</div>`).join("");
     return `<section class="day" data-day="${d.day}"><h3>${d.day}曜 <small>${d.month}/${d.date}</small></h3>${body}</section>`;
   }).join("");
   $$("#daypills .pill").forEach((p) => p.addEventListener("click", () => setDay(p.dataset.day)));
@@ -174,7 +184,16 @@ function takeIn(text) {
       commit(M.fromBackup(obj));
       toast("書き出しファイルから戻しました");
     } else {
-      commit(M.importBundle(state, obj));
+      let next = M.importBundle(state, obj);
+      let ok = commit(next);
+      if (!ok && obj.photos) {
+        // 写真つきで入りきらないときは、写真を外して献立だけ入れる
+        next = M.importBundle(state, { ...obj, photos: {} });
+        ok = commit(next);
+        if (ok) { toast("写真が大きすぎたので、献立だけ取り込みました"); $("#paste").value = ""; renderAll(); showTab("menu"); }
+        return;
+      }
+      if (!ok) return;
       toast(`${M.weekSpan(obj.week_start)} の週を取り込みました`);
     }
   } catch (e) { toast(e.message); return; }
@@ -238,7 +257,13 @@ function init() {
   renderAll();
   showTab(M.currentWeek(state) ? pref("tab") || "menu" : "set");
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    // 新しい版が届いたら、1 回だけ自動で開き直して新しい画面にする
+    const had = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (had && !reloaded) { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register("./service-worker.js").then((r) => r.update()).catch(() => {});
   }
 }
 

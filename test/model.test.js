@@ -74,6 +74,28 @@ test("記録は週ごとに残り、書き出して読み戻せる", () => {
   assert.throws(() => M.fromBackup({ format: "other" }));
 });
 
+test("写真は取り込んだ週のぶんだけ持ち、前の週からは外す", () => {
+  const a = bundle();
+  a.photos = { r1: "data:image/jpeg;base64,AAAA" };
+  let s = M.importBundle(M.emptyState(), a);
+  assert.equal(M.photoOf(M.currentWeek(s), "r1"), "data:image/jpeg;base64,AAAA");
+  assert.equal(M.photoOf(M.currentWeek(s), "x:トマト"), null);
+  const b = bundle();
+  b.week_start = "2026-11-23";
+  b.photos = { r1: "data:image/jpeg;base64,BBBB" };
+  s = M.importBundle(s, b);
+  assert.equal(M.home(s).weeks["2026-11-16"].photos, undefined);
+  assert.equal(M.photoOf(M.currentWeek(s), "r1"), "data:image/jpeg;base64,BBBB");
+  assert.ok(M.home(s).weeks["2026-11-16"].days); // 献立そのものは残る
+});
+
+test("写真の欄に画像でないものが入っていても出さない", () => {
+  const a = bundle();
+  a.photos = { r1: "javascript:alert(1)" };
+  assert.equal(M.photoOf(a, "r1"), null);
+  assert.equal(M.photoOf(bundle(), "r1"), null); // 写真なしの週も読める
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");

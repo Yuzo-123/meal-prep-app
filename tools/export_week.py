@@ -2,14 +2,18 @@
 """lio が組んだ 1 週間ぶんを、アプリに取り込める 1 つのファイルにまとめる。
 
 使い方:
-  /usr/bin/python3 projects/meal-prep-app/tools/export_week.py projects/meal-prep/02_outputs/weeks/<月曜の日付>/plan.json
+  /usr/bin/python3 projects/meal-prep-app/tools/export_week.py projects/meal-prep/02_outputs/weeks/<月曜の日付>/plan.json [--no-photos]
 
-読むもの: plan.json、同じフォルダの shopping.json（week.py build が書く）、projects/meal-prep/data/recipe_index.json
-書くもの: plan.json と同じフォルダの app_week.json（家の献立なので、アプリのフォルダには置かない）
+読むもの: plan.json、同じフォルダの shopping.json（week.py build が書く）、projects/meal-prep/data/recipe_index.json、
+          料理の写真 biz-dev/library/book-yaseru-tsukurioki-330/pages/_photos/<レシピ id>.jpg（ある品だけ）
+書くもの: plan.json と同じフォルダの app_week.json（家の献立と本の写真が入るので、アプリのフォルダには置かない。
+          親のリポジトリでも Git に入れない）
 
-載せるのは料理名・本のページ番号・日持ち・買い物リスト・メモまで。
+載せるのは料理名・本のページ番号・日持ち・買い物リスト・メモ・料理の写真まで。
 本の材料・分量・作り方は読まないし、書き出さない（recipe_index.json にはそもそも入っていない）。
+写真入りのファイルは家族の端末へ渡すだけにして、公開の場所やサーバーには置かない。
 """
+import base64
 import datetime
 import json
 import os
@@ -67,10 +71,24 @@ def main():
         "notes": shop.get("notes", []),
         "exported_at": datetime.datetime.now().isoformat(timespec="seconds"),
     }
+    # 料理の写真（本から切り出したもの）。公開の場所には置かず、この取り込みファイルに入れて
+    # 家族の端末の中だけに残す（2026-11-14 に Yuzo が決定）。同じ品が何度出ても 1 枚だけ持つ。
+    photos = {}
+    if "--no-photos" not in sys.argv:
+        workspace = os.path.dirname(os.path.dirname(root))
+        photo_dir = os.path.join(workspace, "biz-dev", "library", "book-yaseru-tsukurioki-330", "pages", "_photos")
+        ids = [x["id"] for v in days.values() for m in v.values() for x in m] + [c["id"] for c in cook]
+        for rid in dict.fromkeys(ids):
+            p = os.path.join(photo_dir, rid + ".jpg")
+            if os.path.exists(p):
+                photos[rid] = "data:image/jpeg;base64," + base64.b64encode(open(p, "rb").read()).decode("ascii")
+    bundle["photos"] = photos
+
     out = os.path.join(week_dir, "app_week.json")
     json.dump(bundle, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     n = sum(len(v["朝"]) + len(v["夜"]) for v in days.values())
-    print("書き出し: %s / 献立 %d 品 / 日曜に作る %d 品 / 買うもの %d 品目" % (out, n, len(cook), len(bundle["shopping"]["buy"])))
+    print("書き出し: %s / 献立 %d 品 / 日曜に作る %d 品 / 買うもの %d 品目 / 写真 %d 枚 / ファイル %.2f MB"
+          % (out, n, len(cook), len(bundle["shopping"]["buy"]), len(photos), os.path.getsize(out) / 1e6))
 
 
 if __name__ == "__main__":

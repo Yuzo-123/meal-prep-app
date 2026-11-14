@@ -52,7 +52,19 @@ export function importBundle(state, bundle) {
   const h = next.households[id];
   h.weeks[bundle.week_start] = bundle;
   h.current = bundle.week_start;
+  // 写真は大きいので、いま取り込んだ週のぶんだけ持つ（端末の保存先の上限を超えないため）。
+  for (const [k, w] of Object.entries(h.weeks)) if (k !== bundle.week_start) delete w.photos;
   return next;
+}
+
+export function photoOf(bundle, id) {
+  const p = bundle && bundle.photos ? bundle.photos[id] : null;
+  return typeof p === "string" && p.startsWith("data:image/") ? p : null;
+}
+
+// 端末の中に書き出すときの大きさ（文字数）。保存先の上限に近いかを見るために使う。
+export function stateSize(state) {
+  return JSON.stringify(state).length;
 }
 
 // 月〜金の日付。時差でずれないよう、文字から年月日を取り出して作る。

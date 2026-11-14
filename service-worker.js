@@ -1,6 +1,6 @@
 // 電波なしでも開くための仕掛け。画面のファイルを端末に覚えさせる。
 // 画面を直したら、下の番号と src/js/app.js の APP_VERSION を一緒に上げる（上げないと古い画面が出続ける）。
-const CACHE = "mealprep-0.1.0";
+const CACHE = "mealprep-0.2.0";
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./src/css/styles.css",
   "./src/js/app.js", "./src/js/model.js", "./src/js/store.js",
