@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="作り置き">
+<meta name="robots" content="noindex">
+<title>今週の作り置き</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="src/css/styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark">作</div>
+    <div><h1>今週の作り置き</h1><p id="headline"></p></div>
+  </header>
+
+  <section class="view" id="v-menu">
+    <div class="needweek">
+      <div class="sticky"><div class="pills" id="daypills"></div></div>
+      <div id="panels"></div>
+    </div>
+    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+  </section>
+
+  <section class="view" id="v-shop">
+    <div class="needweek">
+      <div class="prog"><b id="shopleft">0</b><span id="shoptext">品目</span></div>
+      <div class="bar"><i id="shopbar"></i></div>
+      <div class="sticky"><div class="pills" id="shoppills"></div></div>
+      <div class="list" id="shoplist"></div>
+      <p class="empty" id="shopempty" hidden>この売り場は全部かごに入りました</p>
+      <details><summary>買わなくてよいもの</summary><ul id="skiplist"></ul></details>
+      <button class="reset" data-reset="buy,pantry">買い物のチェックを外す</button>
+    </div>
+    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+  </section>
+
+  <section class="view" id="v-cook">
+    <div class="needweek">
+      <div class="prog"><b id="cookleft">0</b><span id="cooktext">品</span></div>
+      <div class="bar"><i id="cookbar"></i></div>
+      <div class="list" id="cooklist"></div>
+      <button class="reset" data-reset="cook">作ったチェックを外す</button>
+    </div>
+    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+  </section>
+
+  <section class="view" id="v-note">
+    <div class="needweek">
+      <h2>気をつけること</h2>
+      <ul class="notes" id="notes"></ul>
+      <h2>今週の記録</h2>
+      <div class="form">
+        <label>日曜の調理にかかった時間（分）<input id="log-min" inputmode="numeric" placeholder="例 210"></label>
+        <label>助かったこと<textarea id="log-good" rows="2" placeholder="一言で"></textarea></label>
+        <label>要らなかったこと・困ったこと<textarea id="log-bad" rows="2" placeholder="一言で"></textarea></label>
+        <div class="formfoot"><button class="btn" id="logsave">記録を保存する</button><span id="logsaved"></span></div>
+      </div>
+    </div>
+    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+  </section>
+
+  <section class="view" id="v-set">
+    <h2>週のデータを取り込む</h2>
+    <div class="form">
+      <p class="hint">lio が書き出した今週のファイル（app_week.json）を選びます。</p>
+      <label class="btn filebtn">ファイルを選ぶ<input type="file" id="file" accept=".json,application/json"></label>
+      <label>または、中身を貼り付ける<textarea id="paste" rows="3" placeholder="ここに貼り付け"></textarea></label>
+      <div class="formfoot"><button class="btn ghost" id="pastego">貼り付けた中身を取り込む</button></div>
+    </div>
+    <div id="weekbox" hidden>
+      <h2>表示する週</h2>
+      <div class="form"><select id="weeksel"></select></div>
+    </div>
+    <h2>書き出し（バックアップ）</h2>
+    <div class="form">
+      <p class="hint">献立・チェック・記録はこの端末の中だけにあります。機種変更の前や、月に 1 回は書き出してください。戻すときは、書き出したファイルを上の「ファイルを選ぶ」で選びます。</p>
+      <div class="formfoot"><button class="btn ghost" id="export">ファイルに書き出す</button></div>
+    </div>
+    <p class="ver">アプリの版 <span id="version"></span></p>
+  </section>
+
+  <footer id="bookline"></footer>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<nav class="tabs"><div>
+  <button data-tab="menu">献立<small>月〜金</small></button>
+  <button data-tab="shop">買い物<small id="tshop">—</small></button>
+  <button data-tab="cook">日曜<small id="tcook">—</small></button>
+  <button data-tab="note">メモ<small id="tnote">—</small></button>
+  <button data-tab="set">設定<small>取り込み</small></button>
+</div></nav>
+
+<script type="module" src="src/js/app.js"></script>
+</body>
+</html>

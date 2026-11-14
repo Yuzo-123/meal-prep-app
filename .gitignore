@@ -1,0 +1,5 @@
+.DS_Store
+# 家の献立・書き出しファイルはここに置かない（置いてしまっても追跡しない）
+app_week*.json
+mealprep-backup-*.json
+*.week.json

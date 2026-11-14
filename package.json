@@ -1,0 +1,8 @@
+{
+  "name": "meal-prep-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
