@@ -105,7 +105,7 @@ def main():
             print("注意: 日曜の材料を集計できませんでした（%s）。手順と下準備だけ書き出します" % e)
         bundle["sunday"] = {"assume": sun.get("assume", ""), "before": sun.get("before", []),
                             "cut": [row(c, ("what", "how", "for")) for c in sun.get("cut", [])],
-                            "steps": steps, "materials": materials}
+                            "steps": steps, "materials": materials, "guide": sun.get("guide") or {}}
 
     out = os.path.join(week_dir, "app_week.json")
     json.dump(bundle, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

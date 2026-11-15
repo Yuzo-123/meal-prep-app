@@ -249,6 +249,72 @@ test("サーバーから来た品の一覧も、新しくなったときだけ�
   assert.equal(M.mergeServerCatalog(r.state, null).changed, false);
 });
 
+test("品ごとの詳しい手順は、入っていれば品の番号で引け、無い週は空", () => {
+  assert.deepEqual(M.sundayPlan(bundle()).guide, {});
+  const a = bundle();
+  a.sunday = { steps: [{ id: "r1", at: "0:00", where: "コンロ①", do: "煮る" }],
+    guide: { r1: { amounts: "分量は本の P.10", steps: [{ t: "下味", do: "塩をふる", why: "味がしみる" }, { t: "煮る", do: "40 分", wait_min: 40 }], after: "鍋のまま冷ます" } } };
+  const g = M.sundayPlan(a).guide.r1;
+  assert.equal(g.steps.length, 2);
+  assert.equal(g.steps[1].wait_min, 40);
+  assert.equal(g.after, "鍋のまま冷ます");
+});
+
+test("全体の流れは、場所ごとの帯になり、終わりは同じ場所の次の手順まで", () => {
+  assert.equal(M.toMin("1:05"), 65);
+  assert.equal(M.toMin("あとで"), null);
+  const a = bundle();
+  a.sunday = { steps: [
+    { id: "r1", at: "0:00", where: "コンロ①", do: "煮る" },
+    { at: "0:15", where: "まな板", title: "切る", do: "まとめて" },
+    { at: "1:00", where: "コンロ①", title: "火を止める", do: "よける" },
+    { at: "1:00", where: "コンロ①", title: "豚汁", do: "炒める" },
+  ] };
+  const t = M.timeline(M.sundayPlan(a).steps);
+  assert.deepEqual(t.lanes.map((l) => l.place), ["コンロ①", "まな板"]);
+  const stove = t.lanes[0].blocks;
+  assert.deepEqual(stove.map((b) => [b.start, b.end]), [[0, 60], [60, 65], [65, 80]]); // 同じ時刻の 2 つは重ねずにずらす
+  assert.equal(stove[0].dish, "r1");
+  assert.deepEqual(t.lanes[1].blocks.map((b) => [b.start, b.end]), [[15, 30]]);
+  assert.equal(t.total, 90); // 15 分きざみに切り上げ
+  assert.deepEqual(M.timeline([]), { lanes: [], total: 0 });
+});
+
+test("買い物は売り場の歩く順（野菜が先）に並び、無かった品は残りに数えない", () => {
+  let s = M.importBundle(M.emptyState(), bundle()); // にんじん（野菜）と鶏もも肉（肉）。ファイルの中では肉が後
+  const rows = M.shoppingRows(M.currentWeek(s));
+  assert.deepEqual(rows.filter((r) => !r.pantry).map((r) => r.name), ["にんじん", "鶏もも肉"]);
+  const wk = "2026-11-16";
+  assert.deepEqual(M.shopProgress(s, wk, M.currentWeek(s)), { total: 2, left: 2, missing: 0, ratio: 0 });
+  s = M.toggleCheck(s, wk, M.noneKey("にんじん"), true);
+  assert.deepEqual(M.shopProgress(s, wk, M.currentWeek(s)), { total: 2, left: 1, missing: 1, ratio: 0.5 });
+  s = M.toggleCheck(s, wk, "buy:鶏もも肉", true);
+  assert.equal(M.shopProgress(s, wk, M.currentWeek(s)).left, 0);
+  s = M.toggleCheck(s, wk, "buy:にんじん", true); // 別の店で買えたら、無かった扱いではなくなる
+  assert.equal(M.shopProgress(s, wk, M.currentWeek(s)).missing, 0);
+});
+
+test("手順が済むと、作る品のチェックが自動で付く", () => {
+  const a = bundle();
+  a.cook_sunday.push({ id: "r9", name: "ナムル", batches: 1 });
+  a.sunday = { steps: [
+    { id: "r1", at: "0:00", where: "コンロ①", do: "煮る" },
+    { id: "r9", at: "0:10", where: "レンジ", do: "あえる" },
+    { at: "0:30", where: "仕上げ", title: "容器へ", do: "詰める" },
+  ] };
+  const wk = "2026-11-16";
+  let s = M.importBundle(M.emptyState(), a);
+  const steps = M.sundayPlan(a).steps;
+  s = M.autoCook(M.toggleCheck(s, wk, steps[0].key, true), wk, a);
+  assert.equal(M.isDone(s, wk, "cook:r1"), true);  // その料理の手順が済んだ
+  assert.equal(M.isDone(s, wk, "cook:r9"), false);
+  s = M.toggleCheck(s, wk, steps[1].key, true);
+  s = M.autoCook(M.toggleCheck(s, wk, steps[2].key, true), wk, a);
+  assert.equal(M.isDone(s, wk, "cook:r9"), true);
+  const plain = M.importBundle(M.emptyState(), bundle());
+  assert.equal(M.autoCook(plain, wk, bundle()), plain); // 段取りが無い週は何も変えない
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");

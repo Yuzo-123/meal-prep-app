@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.7.2"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.9.1"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -33,6 +33,7 @@ function showTab(name) {
   $$("nav.tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
   pref("tab", name);
   window.scrollTo(0, 0);
+  keepAwake(name === "cook");
 }
 
 // ---------- 献立 ----------
@@ -193,13 +194,22 @@ function renderCook(w) {
     refreshChecks();
   }));
   $("#assume").textContent = s.assume;
+  renderTimeline(s);
+  // 料理で絞る: 「すべて」は時刻の順、品を選ぶとその品の詳しい手順と、時刻の順での出番
+  $("#dishpills").innerHTML = `<button class="pill" data-dish="">すべて</button>` +
+    M.cookRows(w).map((r) => `<button class="pill" data-dish="${esc(r.key.slice(5))}">${esc(r.name)}</button>`).join("");
+  $$("#dishpills .pill").forEach((p) => p.addEventListener("click", () => { stepDish = p.dataset.dish || null; stepPlace = "all"; refreshChecks(); }));
   $("#placepills").innerHTML = `<button class="pill" data-place="all">すべて</button>` +
-    places.map((p, i) => `<button class="pill pl${i % 6}" data-place="${esc(p)}"><i class="dot"></i>${esc(p)}</button>`).join("") +
-    `<button class="pill clear" id="dishclear" hidden></button>`;
+    places.map((p, i) => `<button class="pill pl${i % 6}" data-place="${esc(p)}"><i class="dot"></i>${esc(p)}</button>`).join("");
   $$("#placepills [data-place]").forEach((p) => p.addEventListener("click", () => { stepPlace = p.dataset.place; refreshChecks(); }));
-  $("#dishclear").addEventListener("click", () => { stepDish = null; refreshChecks(); });
   $("#steplist").innerHTML = s.steps.map((x) => checkRow(x.key, `step pl${places.indexOf(x.where) % 6}" data-place="${esc(x.where)}" data-dish="${esc(x.dish || "")}`,
-    `<span class="when"><i>${esc(x.at)}</i>${esc(x.where)}</span><b>${esc(x.title)} ${x.page != null ? `<span class="pg">P.${esc(x.page)}</span>` : ""}</b><small class="wr">${esc(x.text)}</small>`)).join("");
+    `<span class="when"><i>${esc(x.at)}</i>${esc(x.where)}</span><b>${esc(x.title)} ${x.page != null ? `<span class="pg">P.${esc(x.page)}</span>` : ""}</b><small class="wr">${esc(x.text)}</small>`,
+    x.dish && s.guide[x.dish] ? `<button type="button" class="nonebtn" data-guide="${esc(x.dish)}">くわしく</button>` : "")).join("");
+  $$("#steplist [data-guide]").forEach((b) => b.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openGuide(b.dataset.guide);
+  }));
   $("#matlist").innerHTML = s.materials.map((x) => checkRow(x.key, "",
     `<b>${esc(x.name)}</b><small>${esc(x.sub)}</small>`, `<span class="amt">${esc(x.amount)}</span>`)).join("");
   $("#matpantry").innerHTML = s.pantry.map((p) => `<span>${esc(p)}</span>`).join("");
@@ -208,6 +218,121 @@ function renderCook(w) {
     `<b>${esc(x.name)}</b><small class="wr">${esc(x.how)}</small>`, `<span class="amt for">${esc(x.for)}</span>`)).join("");
   $$("#sunpills .pill").forEach((p) => { p.onclick = () => setSun(p.dataset.sun); });
   setSun(s.has ? pref("sun") || "dish" : "dish");
+}
+
+// 全体の流れ: 場所ごとの帯を横に並べ、どの場所でいつ何が動いているかを 1 枚で見せる。帯を押すとその料理の手順へ。
+const TL_PX = 4;      // 1 分あたりの幅
+const TL_LABEL = 70;  // 左の場所の名前の幅
+function renderTimeline(s) {
+  const t = M.timeline(s.steps);
+  const box = $("#timeline");
+  box.hidden = !t.lanes.length;
+  if (!t.lanes.length) return;
+  const places = M.places(s.steps);
+  const ticks = [];
+  for (let m = 0; m <= t.total; m += 15) ticks.push(`<span style="left:${TL_LABEL + m * TL_PX}px">${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}</span>`);
+  const lanes = t.lanes.map((l) => `<div class="tllane pl${places.indexOf(l.place) % 6}"><span class="tlplace">${esc(l.place)}</span>${l.blocks.map((b) =>
+    `<button type="button" class="tlb" data-key="${esc(b.key)}" data-dish="${esc(b.dish || "")}" style="left:${TL_LABEL + b.start * TL_PX}px;width:${(b.end - b.start) * TL_PX - 3}px">${esc(b.title)}</button>`).join("")}</div>`).join("");
+  box.innerHTML = `<div class="tlhead"><b>全体の流れ</b><span>横に動かせます・帯を押すとその料理の手順へ</span></div>
+    <div class="tlscroll"><div class="tlgrid" style="width:${TL_LABEL + t.total * TL_PX + 16}px"><div class="tlaxis">${ticks.join("")}</div>${lanes}</div></div>`;
+  $$(".tlb", box).forEach((b) => b.addEventListener("click", () => {
+    stepDish = b.dataset.dish || null;
+    stepPlace = "all";
+    refreshChecks();
+    if (!stepDish) { const row = $$("#steplist .row").find((r) => r.dataset.key === b.dataset.key); if (row) row.scrollIntoView({ block: "center", behavior: "smooth" }); }
+  }));
+}
+
+// 短い一言（「肉に下味」など）で分からないときに、その料理のくわしい手順へ移る
+function openGuide(dish) {
+  stepDish = dish;
+  stepPlace = "all";
+  setSun("steps");
+  refreshChecks();
+  const box = $("#dishpills");
+  if (box) box.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+// 選んだ品の詳しい手順（下味とは何をするのか、煮たあとどうなるのか、まで）。待つ手順にはタイマー。
+let guideFor = null;
+function renderGuide(w, s) {
+  const box = $("#dishguide");
+  const g = stepDish ? s.guide[stepDish] : null;
+  box.hidden = !stepDish;
+  if (!stepDish) { guideFor = null; return; }
+  if (guideFor === w.week_start + stepDish) { tickTimers(); return; } // 同じ品なら作り直さない（タイマーの表示を保つ）
+  guideFor = w.week_start + stepDish;
+  const dish = M.cookRows(w).find((r) => r.key === "cook:" + stepDish);
+  if (!g) {
+    box.innerHTML = `<div class="guide"><h3>${esc(dish.name)}</h3><p class="where">この品の詳しい手順は、まだ入っていません。本の P.${esc(dish.page)} を開いてください。</p></div>`;
+    return;
+  }
+  const steps = (g.steps || []).map((x, i) => `<div class="gstep"><span class="num">${i + 1}</span><div>
+      <b>${esc(x.t)}</b><p>${esc(x.do)}</p>${x.why ? `<p class="why">${esc(x.why)}</p>` : ""}
+      ${x.wait_min ? `<button type="button" class="timer" data-timer="${esc(`${w.week_start}|${stepDish}|${i}`)}" data-min="${esc(x.wait_min)}">${esc(x.wait_min)} 分のタイマーを始める</button>` : ""}
+    </div></div>`).join("");
+  box.innerHTML = `<div class="guide"><h3>${esc(dish.name)}${dish.batches > 1 ? ` ×${dish.batches}` : ""}</h3>
+    <p class="where">${esc(g.amounts || (dish.page != null ? `分量は本の P.${dish.page}` : ""))}</p>${steps}
+    ${g.after ? `<div class="after"><b>できあがったら</b>${esc(g.after)}</div>` : ""}</div>`;
+  $$(".timer", box).forEach((b) => b.addEventListener("click", () => {
+    const t = timers();
+    if (t[b.dataset.timer]) delete t[b.dataset.timer]; // 動いている・終わったタイマーをもう一度押すと止める
+    else t[b.dataset.timer] = Date.now() + Number(b.dataset.min) * 60000;
+    pref("timers", JSON.stringify(t));
+    tickTimers();
+  }));
+  tickTimers();
+}
+
+// タイマーは自分で押したときだけ動く。終わる時刻を端末に覚えさせるので、アプリを閉じても続きから数える。
+function timers() {
+  try { return JSON.parse(pref("timers") || "{}"); } catch (e) { return {}; }
+}
+
+function tickTimers() {
+  const t = timers();
+  $$(".timer").forEach((b) => {
+    const end = t[b.dataset.timer];
+    const left = end ? Math.ceil((end - Date.now()) / 1000) : null;
+    b.classList.toggle("run", left !== null && left > 0);
+    b.classList.toggle("end", left !== null && left <= 0);
+    b.textContent = left === null ? `${b.dataset.min} 分のタイマーを始める`
+      : left > 0 ? `あと ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}（押すと止める）`
+      : "時間です。次へ進みましょう（押すと消える）";
+  });
+  // 動いているタイマーは、料理タブのいちばん上にも出す（くわしい手順を閉じても見失わないように）
+  const w = M.currentWeek(state);
+  const strip = $("#timerstrip");
+  const items = w ? Object.entries(t).filter(([k]) => k.startsWith(w.week_start + "|")) : [];
+  strip.hidden = !items.length;
+  const keys = items.map(([k]) => k).join(",");
+  if (strip.dataset.keys !== keys) { // 中身が変わったときだけ作り直す（押している途中で消えないように）
+    strip.dataset.keys = keys;
+    strip.innerHTML = items.map(([k]) => `<button type="button" class="tchip" data-key="${esc(k)}" data-dish="${esc(k.split("|")[1])}"></button>`).join("");
+  }
+  $$(".tchip", strip).forEach((chip) => {
+    const [, dish, i] = chip.dataset.key.split("|");
+    const cook = w.cook_sunday.find((c) => c.id === dish);
+    const g = ((w.sunday || {}).guide || {})[dish];
+    const left = Math.ceil((t[chip.dataset.key] - Date.now()) / 1000);
+    chip.classList.toggle("end", left <= 0);
+    chip.textContent = `${cook ? cook.name : ""}・${g && g.steps[i] ? g.steps[i].t : ""}　${left > 0 ? `あと ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "時間です"}`;
+  });
+}
+setInterval(tickTimers, 1000);
+
+// 料理タブを開いているあいだは、画面が消えないようにする（手が濡れていても見続けられるように）。使えない端末では何もしない。
+let wake = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wake && "wakeLock" in navigator) {
+      wake = await navigator.wakeLock.request("screen");
+      wake.addEventListener("release", () => { wake = null; });
+    } else if (!on && wake) {
+      await wake.release();
+      wake = null;
+    }
+  } catch (e) { /* 断られても、いつもどおり動く */ }
 }
 
 function setSun(name) {
@@ -223,7 +348,11 @@ function bindRows() {
   $$(".row").forEach((row) => {
     const box = $("input", row);
     box.addEventListener("change", () => {
-      commit(M.toggleCheck(state, M.home(state).current, row.dataset.key, box.checked));
+      const wk = M.home(state).current;
+      let next = M.toggleCheck(state, wk, row.dataset.key, box.checked);
+      // 手順を済ませたら、その料理の「作る品」も済みにする（進み具合が食い違わないように）
+      if (box.checked && row.dataset.key.startsWith("step:")) next = M.autoCook(next, wk, M.currentWeek(next));
+      commit(next);
       refreshChecks();
     });
   });
@@ -248,11 +377,13 @@ function refreshChecks() {
     if (ok && !row.classList.contains("done")) shown++;
   });
   $("#shopempty").hidden = shown > 0;
-  const buy = M.progress(state, wk, M.shoppingRows(w).filter((r) => !r.pantry));
+  const buy = M.shopProgress(state, wk, w);
+  const none = buy.missing ? `・無かった ${buy.missing}` : "";
   $("#shopleft").textContent = buy.left;
-  $("#shoptext").textContent = buy.left ? `品目 残り（全 ${buy.total}）` : "品目 すべてかごに入りました";
+  $("#shoptext").textContent = buy.left ? `品目 残り（全 ${buy.total}${none}）`
+    : buy.missing ? `品目 残りなし（無かった ${buy.missing} 品目は「メモ」に出ます）` : "品目 すべてかごに入りました";
   $("#shopbar").style.width = buy.ratio * 100 + "%";
-  $("#tshop").textContent = buy.left ? `残り ${buy.left}` : "完了";
+  $("#tshop").textContent = buy.left ? buy.left : "✓";
   // 買い物: 店に無かった印
   $$("#shoplist .nonebtn").forEach((b) => {
     const none = M.isDone(state, wk, b.dataset.none);
@@ -275,13 +406,30 @@ function refreshChecks() {
     ? `<span class="when"><i>${esc(now.at)}</i>${esc(now.where)}</span><b>${esc(now.title)} ${now.page != null ? `<span class="pg">P.${esc(now.page)}</span>` : ""}</b><p>${esc(now.text)}</p>`
     : "";
   $("#nowdone").hidden = !now;
+  const nowGuide = now && now.dish && s.guide[now.dish] ? now.dish : "";
+  $("#nowguide").hidden = !nowGuide;
+  $("#nowguide").dataset.dish = nowGuide;
   $("#nowdone").dataset.key = now ? now.key : "";
   $$("#placepills [data-place]").forEach((p) => p.classList.toggle("on", p.dataset.place === stepPlace));
-  const clear = $("#dishclear");
-  if (clear) {
-    const dish = stepDish ? M.cookRows(w).find((r) => r.key === "cook:" + stepDish) : null;
-    clear.hidden = !dish;
-    clear.textContent = dish ? `${dish.name} だけ ×` : "";
+  if (stepDish && !M.cookRows(w).some((r) => r.key === "cook:" + stepDish)) stepDish = null; // 週が替わって無くなった品
+  $$("#dishpills .pill").forEach((p) => p.classList.toggle("on", (p.dataset.dish || null) === stepDish));
+  $("#placepills").hidden = !!stepDish;
+  $("#nowbox").hidden = !s.has || !!stepDish;
+  $("#assume").hidden = !!stepDish;
+  $("#stephead").hidden = !stepDish;
+  renderGuide(w, s);
+  $$("#timeline .tlb").forEach((b) => {
+    b.classList.toggle("done", M.isDone(state, wk, b.dataset.key));
+    b.classList.toggle("current", !!now && b.dataset.key === now.key);
+    b.classList.toggle("dim", !!stepDish && b.dataset.dish !== stepDish);
+  });
+  // いまの手順（料理を選んでいるときは、その料理の最初の帯）が見える位置まで、横に寄せる
+  const focus = stepDish ? $$("#timeline .tlb").find((b) => b.dataset.dish === stepDish) : $("#timeline .tlb.current");
+  const scroller = $("#timeline .tlscroll");
+  const focusKey = focus ? (stepDish || "") + focus.dataset.key : "";
+  if (scroller && focus && scroller.dataset.focus !== focusKey) {
+    scroller.dataset.focus = focusKey;
+    scroller.scrollTo({ left: Math.max(0, focus.offsetLeft - TL_LABEL - 12), behavior: "smooth" });
   }
   $$("#steplist .row").forEach((row) => {
     row.hidden = !((stepPlace === "all" || row.dataset.place === stepPlace) && (!stepDish || row.dataset.dish === stepDish));
@@ -292,7 +440,7 @@ function refreshChecks() {
   $("#cookleft").textContent = cook.left;
   $("#cooktext").textContent = cook.left ? `品 残り（全 ${cook.total}）` : "品 すべて作りました";
   $("#cookbar").style.width = cook.ratio * 100 + "%";
-  $("#tcook").textContent = cook.left ? `残り ${cook.left}` : "完了";
+  $("#tcook").textContent = cook.left ? cook.left : "✓";
 }
 
 // ---------- メモと記録 ----------
@@ -439,7 +587,7 @@ async function refreshFridge() {
     if (!cloudUser.household) cloudUser.household = pref("household", await C.myHousehold(session));
     const n = await C.countToday(session, cloudUser.household);
     $("#fr-count").textContent = n ? `今日は ${n} 枚送っています` : "今日はまだ送っていません";
-    $("#tfridge").textContent = n ? `${n} 枚` : "写真";
+    $("#tfridge").textContent = n ? n : "";
   } catch (e) {
     $("#fr-count").textContent = e.message;
   }
@@ -496,7 +644,7 @@ function renderAll() {
   }
   $("#headline").textContent = `${M.weekSpan(w.week_start)}　${w.memo || ""}`;
   $("#bookline").textContent = w.book ? `作り方は本『${w.book}』の各ページ（P.）を開いてください` : "";
-  $("#tnote").textContent = (w.notes || []).length;
+  $("#tnote").textContent = (w.notes || []).length || "";
   renderMenu(w);
   renderShop(w);
   renderCook(w);
@@ -535,11 +683,16 @@ function init() {
   $("#reqcopy").addEventListener("click", copyRequest);
   $("#reqshare").addEventListener("click", () => navigator.share({ text: currentRequest().text }).catch(() => {}));
   $("#pickclear").addEventListener("click", () => { pick.ids.clear(); renderPlan(); });
+  $("#timerstrip").addEventListener("click", (e) => {
+    const chip = e.target.closest(".tchip");
+    if (chip) openGuide(chip.dataset.dish);
+  });
+  $("#nowguide").addEventListener("click", (e) => { if (e.currentTarget.dataset.dish) openGuide(e.currentTarget.dataset.dish); });
   $("#nowdone").addEventListener("click", (e) => {
     const key = e.currentTarget.dataset.key;
     const w = M.currentWeek(state);
     if (!key || !w) return;
-    commit(M.toggleCheck(state, w.week_start, key, true));
+    commit(M.autoCook(M.toggleCheck(state, w.week_start, key, true), w.week_start, w));
     refreshChecks();
   });
   $("#loginform").addEventListener("submit", doLogin);
@@ -553,6 +706,7 @@ function init() {
   // 閉じずに置いておいたアプリに戻ってきたときにも、新しい献立を受け取る（1 分に 1 回まで）
   let lastSeen = Date.now();
   document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") keepAwake($("#v-cook").classList.contains("on")); // 戻ってきたら点けたままを掛け直す
     if (document.visibilityState !== "visible" || Date.now() - lastSeen < 60000) return;
     lastSeen = Date.now();
     refreshFridge();

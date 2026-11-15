@@ -3,7 +3,8 @@
 
 export const DAYS = ["月", "火", "水", "木", "金"];
 export const MEALS = ["朝", "夜"];
-export const AISLE_ORDER = ["肉", "魚介", "野菜・きのこ・果物", "卵・乳製品・大豆", "缶詰・乾物・その他"];
+// 売り場の順。多くの店は入口が野菜売り場なので、歩く順に合わせて野菜を先にする。
+export const AISLE_ORDER = ["野菜・きのこ・果物", "肉", "魚介", "卵・乳製品・大豆", "缶詰・乾物・その他"];
 export const AISLE_SHORT = {
   "肉": "肉", "魚介": "魚介", "野菜・きのこ・果物": "野菜",
   "卵・乳製品・大豆": "卵・乳・豆", "缶詰・乾物・その他": "そのほか",
@@ -208,7 +209,34 @@ export function shoppingRows(bundle) {
   const pantry = (bundle.shopping.pantry || []).map((name) => ({
     key: "pantry:" + name, name, amount: "", aisle: "pantry", sub: "家にあるか確かめる", some: "", pantry: true,
   }));
+  const rank = (a) => { const i = AISLE_ORDER.indexOf(a); return i < 0 ? AISLE_ORDER.length : i; };
+  buy.sort((a, b) => rank(a.aisle) - rank(b.aisle)); // 同じ売り場の中の順は変えない
   return buy.concat(pantry);
+}
+
+// 買い物の進み具合。「無かった」品は、残りには数えない（その店ではもう探さないので）。
+export function shopProgress(state, week, bundle) {
+  const rows = shoppingRows(bundle).filter((r) => !r.pantry);
+  const missing = rows.filter((r) => !isDone(state, week, r.key) && isDone(state, week, noneKey(r.name))).length;
+  const left = rows.filter((r) => !isDone(state, week, r.key) && !isDone(state, week, noneKey(r.name))).length;
+  return { total: rows.length, left, missing, ratio: rows.length ? (rows.length - left) / rows.length : 0 };
+}
+
+// 手順のチェックから、「作る品」のチェックを自動で付ける。
+// ある料理の手順が全部済んだらその料理を、手順が全部済んだら全部の料理を「作り終えた」にする。外すことはしない。
+export function autoCook(state, week, bundle) {
+  const steps = sundayPlan(bundle).steps;
+  if (!steps.length) return state;
+  const done = (x) => isDone(state, week, x.key);
+  const all = steps.every(done);
+  let next = state;
+  for (const c of bundle.cook_sunday) {
+    const mine = steps.filter((x) => x.dish === c.id);
+    if ((all || (mine.length && mine.every(done))) && !isDone(next, week, "cook:" + c.id)) {
+      next = toggleCheck(next, week, "cook:" + c.id, true, "auto");
+    }
+  }
+  return next;
 }
 
 export function cookRows(bundle) {
@@ -240,8 +268,36 @@ export function sundayPlan(bundle) {
     materials: (mat.items || []).map((x) => ({ key: "mat:" + x.name, name: x.name, amount: x.amount || "", sub: (x.for || []).join("・") })),
     pantry: mat.pantry || [],
     before: (s.before || []).map((t) => ({ key: "before:" + t, text: t })),
+    guide: s.guide || {},
     cut: (s.cut || []).map((c) => ({ key: "cut:" + c.what, name: c.what, how: c.how || "", for: c.for || "" })),
   };
+}
+
+// 「1:05」→ 65 分。読めなければ null。
+export function toMin(at) {
+  const m = /^(\d+):(\d{2})$/.exec(at || "");
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+// 全体の流れ（場所ごとの帯）。手順は始まる時刻しか持たないので、終わりは「同じ場所の次の手順が始まるまで」とみなす。
+// 同じ場所で次が無い手順は 15 分、同じ時刻に重なる手順は 5 分ずつずらして並べる。あくまで目安。
+export function timeline(steps) {
+  const items = steps.map((x) => ({ ...x, start: toMin(x.at) })).filter((x) => x.start !== null && x.where);
+  if (!items.length) return { lanes: [], total: 0 };
+  const lanes = places(items).map((place) => {
+    const mine = items.filter((x) => x.where === place).sort((a, b) => a.start - b.start);
+    let prevEnd = 0;
+    const blocks = mine.map((x, i) => {
+      const start = Math.max(x.start, prevEnd);
+      const next = i + 1 < mine.length ? mine[i + 1].start : null;
+      const end = Math.max(start + 5, next !== null && next > start ? next : start + (next === null ? 15 : 5));
+      prevEnd = end;
+      return { key: x.key, title: x.title, dish: x.dish, at: x.at, start, end };
+    });
+    return { place, blocks };
+  });
+  const total = Math.ceil(Math.max(...lanes.flatMap((l) => l.blocks.map((b) => b.end))) / 15) * 15;
+  return { lanes, total };
 }
 
 // レシピで使う場所の一覧（出てきた順）。色分けと絞り込みに使う。

@@ -13,7 +13,7 @@ FONTS = ["/System/Library/Fonts/ヒラギノ角ゴシック W7.ttc", "/System/Li
 def main():
     font_path = next(p for p in FONTS if os.path.exists(p))
     for size in (192, 512):
-        img = Image.new("RGB", (size, size), "#111111")  # iPhone が自分で角を丸めるので四角のまま塗る
+        img = Image.new("RGB", (size, size), "#c4531f")  # iPhone が自分で角を丸めるので四角のまま塗る
         d = ImageDraw.Draw(img)
         font = ImageFont.truetype(font_path, int(size * 0.56))
         box = d.textbbox((0, 0), "作", font=font)

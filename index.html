@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0b0b0b" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbf6ee" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1612" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="作り置き">
 <meta name="robots" content="noindex">
@@ -24,6 +24,7 @@
   <section class="view" id="v-menu">
     <div class="needweek">
       <div class="sticky"><div class="pills" id="daypills"></div></div>
+      <p class="hint tip">食べ終えたら、カードを押すと「食べた」の印が付きます。</p>
       <div id="panels"></div>
       <button class="btn ghost wide" data-go="plan">次の週の献立を作る</button>
     </div>
@@ -67,6 +68,7 @@
       <div class="prog"><b id="shopleft">0</b><span id="shoptext">品目</span></div>
       <div class="bar"><i id="shopbar"></i></div>
       <div class="sticky"><div class="pills" id="shoppills"></div></div>
+      <p class="hint tip">出かける前に、右端の「調味料」で家に残りがあるかも確かめます。</p>
       <div class="list" id="shoplist"></div>
       <p class="empty" id="shopempty" hidden>この売り場は全部かごに入りました</p>
       <details><summary>買わなくてよいもの</summary><ul id="skiplist"></ul></details>
@@ -79,6 +81,7 @@
     <div class="needweek">
       <div class="prog"><b id="cookleft">0</b><span id="cooktext">品</span></div>
       <div class="bar"><i id="cookbar"></i></div>
+      <div class="tstrip" id="timerstrip" hidden></div>
       <div class="pills" id="sunpills">
         <button class="pill" data-sun="dish">作る品</button>
         <button class="pill" data-sun="mat">材料</button>
@@ -86,11 +89,15 @@
         <button class="pill" data-sun="steps">レシピ</button>
       </div>
       <div class="sun" data-sun="steps">
+        <div class="tl" id="timeline" hidden></div>
         <div class="now" id="nowbox" hidden>
           <div class="nowhead" id="nowhead"></div>
           <div class="nowbody" id="nowbody"></div>
-          <button class="btn" id="nowdone" type="button">できた。次へ</button>
+          <div class="formfoot"><button class="btn" id="nowdone" type="button">できた。次へ</button><button class="btn ghost" id="nowguide" type="button" hidden>くわしい手順を見る</button></div>
         </div>
+        <div class="pills" id="dishpills"></div>
+        <div id="dishguide" hidden></div>
+        <p class="sub2" id="stephead" hidden>時刻の順では、ここに出てきます</p>
         <div class="pills" id="placepills"></div>
         <p class="hint" id="assume"></p>
         <div class="list keep" id="steplist"></div>
@@ -104,14 +111,15 @@
       <div class="sun" data-sun="prep">
         <div class="mealhead">始める前に</div>
         <div class="list keep" id="beforelist"></div>
-        <div class="mealhead">切りもの（まとめて済ませる）</div>
+        <div class="mealhead">切りもの（レシピの「まとめて切る」のときに見る）</div>
         <div class="list keep" id="cutlist"></div>
       </div>
       <div class="sun" data-sun="dish">
+        <p class="hint">材料 → 下準備 → レシピ の順に進めます。レシピで手順を済ませると、ここのチェックは自動で付きます。</p>
         <div class="list" id="cooklist"></div>
       </div>
       <p class="empty" id="sunempty" hidden>この週には、まだ日曜の段取りが入っていません</p>
-      <button class="reset" data-reset="cook,step,mat,before,cut">日曜のチェックを外す</button>
+      <button class="reset" data-reset="cook,step,mat,before,cut">料理のチェックを外す</button>
     </div>
     <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
   </section>
@@ -148,7 +156,7 @@
     <div id="fr-main" hidden>
       <h2>冷蔵庫の写真を送る</h2>
       <div class="form">
-        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送った写真は、献立ができたら消します。</p>
+        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送ったら、献立を頼むチャットで「献立を組んで」と伝えます。送った写真は、献立ができたら消します。</p>
         <label class="btn filebtn">撮る・写真を選ぶ<input type="file" id="photo" accept="image/*" multiple></label>
         <p class="hint" id="fr-count"></p>
       </div>
@@ -183,11 +191,11 @@
 <div id="toast" role="status" aria-live="polite"></div>
 
 <nav class="tabs"><div>
-  <button data-tab="menu">献立<small>月〜金</small></button>
-  <button data-tab="shop">買い物<small id="tshop">—</small></button>
-  <button data-tab="cook">日曜<small id="tcook">—</small></button>
-  <button data-tab="fridge">冷蔵庫<small id="tfridge">写真</small></button>
-  <button data-tab="note">メモ<small id="tnote">—</small></button>
+  <button data-tab="menu"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4M8.5 14.5h2M13.5 14.5h2"/></svg></span><b>献立</b></button>
+  <button data-tab="shop"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 10h15l-1.6 8.6a2 2 0 0 1-2 1.6H8.1a2 2 0 0 1-2-1.6L4.5 10zM9 10l3-6 3 6M10 14v3M14 14v3"/></svg><small class="badge" id="tshop"></small></span><b>買い物</b></button>
+  <button data-tab="cook"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h14v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4v-5zM3 11h18M9.5 7.5c0-1.2 1-1.6 1-3M14 7.5c0-1.2 1-1.6 1-3"/></svg><small class="badge" id="tcook"></small></span><b>料理</b></button>
+  <button data-tab="fridge"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M6 10h12M9 6v2M9 13v3"/></svg><small class="badge" id="tfridge"></small></span><b>冷蔵庫</b></button>
+  <button data-tab="note"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM15 3v4h4M9 12h6M9 16h6"/></svg><small class="badge" id="tnote"></small></span><b>メモ</b></button>
 </div></nav>
 
 <script type="module" src="src/js/app.js"></script>
