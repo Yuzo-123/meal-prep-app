@@ -204,7 +204,7 @@ export function weekSpan(weekStart) {
 export function shoppingRows(bundle) {
   const buy = bundle.shopping.buy.map((it) => ({
     key: "buy:" + it.name, name: it.name, amount: it.amount || "", aisle: it.aisle,
-    sub: (it.for || []).join("・"), some: it.some || "", pantry: false,
+    sub: (it.for || []).join("・"), dishes: it.for || [], some: it.some || "", pantry: false,
   }));
   const pantry = (bundle.shopping.pantry || []).map((name) => ({
     key: "pantry:" + name, name, amount: "", aisle: "pantry", sub: "家にあるか確かめる", some: "", pantry: true,
@@ -212,6 +212,13 @@ export function shoppingRows(bundle) {
   const rank = (a) => { const i = AISLE_ORDER.indexOf(a); return i < 0 ? AISLE_ORDER.length : i; };
   buy.sort((a, b) => rank(a.aisle) - rank(b.aisle)); // 同じ売り場の中の順は変えない
   return buy.concat(pantry);
+}
+
+// 買い物を料理で絞るための一覧。買うものに出てくる順に、料理名と品目の数を返す。
+export function shopDishes(bundle) {
+  const out = new Map();
+  for (const it of bundle.shopping.buy) for (const d of it.for || []) out.set(d, (out.get(d) || 0) + 1);
+  return [...out].map(([name, count]) => ({ name, count }));
 }
 
 // 買い物の進み具合。「無かった」品は、残りには数えない（その店ではもう探さないので）。

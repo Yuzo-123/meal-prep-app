@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.2"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.3"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -140,10 +140,11 @@ function setDay(d) {
 
 // ---------- 買い物・日曜（チェックの行） ----------
 let aisle = "all";
+let shopDish = "all"; // 買い物の絞り込み: 料理
 
 function rowHtml(r, right) {
   const some = r.some ? `<em>家に ${esc(r.some)} あり</em>` : "";
-  return `<label class="row" data-key="${esc(r.key)}" data-aisle="${esc(r.aisle || "")}">
+  return `<label class="row" data-key="${esc(r.key)}" data-aisle="${esc(r.aisle || "")}" data-dishes="${esc((r.dishes || []).join("|"))}">
     <input type="checkbox"><span class="box"></span>
     <span class="body"><b>${esc(r.name)}${r.batches > 1 ? `<span class="x">×${r.batches}</span>` : ""}</b><small>${esc(r.sub || r.keep || "")}${some}</small></span>
     ${right}</label>`;
@@ -168,6 +169,12 @@ function renderShop(w) {
   }));
   $("#skiplist").innerHTML = (w.shopping.skip || []).map((s) => `<li><b>${esc(s.name)}</b><span>${esc(s.where || "")}</span></li>`).join("") || "<li><span>なし</span></li>";
   $$("#shoppills .pill").forEach((p) => p.addEventListener("click", () => { aisle = p.dataset.aisle; refreshChecks(); }));
+  const dishes = M.shopDishes(w);
+  if (!dishes.some((d) => d.name === shopDish)) shopDish = "all";
+  $("#shopdish").innerHTML = `<option value="all">すべての料理</option>` +
+    dishes.map((d) => `<option value="${esc(d.name)}">${esc(d.name)}（${d.count}）</option>`).join("");
+  $("#shopdish").value = shopDish;
+  $("#shopdish").onchange = (e) => { shopDish = e.target.value; if (shopDish !== "all" && aisle === "pantry") aisle = "all"; refreshChecks(); };
 }
 
 function checkRow(key, cls, body, right = "") {
@@ -373,10 +380,14 @@ function refreshChecks() {
   let shown = 0;
   $$("#shoplist .row").forEach((row) => {
     const pantry = row.dataset.aisle === "pantry";
-    const ok = aisle === "all" ? !pantry : row.dataset.aisle === aisle;
+    const inAisle = aisle === "all" ? !pantry : row.dataset.aisle === aisle;
+    const inDish = shopDish === "all" || pantry || row.dataset.dishes.split("|").includes(shopDish);
+    const ok = inAisle && inDish;
     row.hidden = !ok;
     if (ok && !row.classList.contains("done")) shown++;
   });
+  $("#shopdish").classList.toggle("on", shopDish !== "all");
+  $("#shopempty").textContent = shopDish === "all" ? "この売り場は全部かごに入りました" : "この料理の分は、ここでは買うものがありません";
   $("#shopempty").hidden = shown > 0;
   const buy = M.shopProgress(state, wk, w);
   const none = buy.missing ? `・無かった ${buy.missing}` : "";

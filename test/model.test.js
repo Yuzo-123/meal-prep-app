@@ -327,3 +327,12 @@ test("覚えさせるファイルの一覧に、実在しないファイルが�
   const list = sw.match(/const ASSETS = \[([\s\S]*?)\];/)[1].match(/"\.\/[^"]*"/g).map((s) => s.slice(3, -1)).filter(Boolean);
   for (const f of list) assert.doesNotThrow(() => readFileSync(new URL("../" + f, import.meta.url)), f);
 });
+
+test("買い物を料理で絞る一覧は、出てくる順に料理名と品目の数を返す", () => {
+  const s = M.importBundle(M.emptyState(), bundle());
+  const w = M.currentWeek(s);
+  const names = M.shopDishes(w).map((d) => d.name);
+  assert.equal(new Set(names).size, names.length);
+  for (const r of M.shoppingRows(w).filter((x) => !x.pantry)) for (const d of r.dishes) assert.ok(names.includes(d));
+  assert.equal(M.shopDishes(w).reduce((n, d) => n + d.count, 0), M.shoppingRows(w).reduce((n, r) => n + (r.dishes || []).length, 0));
+});
