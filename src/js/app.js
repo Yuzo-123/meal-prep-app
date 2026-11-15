@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.4"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.8"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -34,6 +34,7 @@ function showTab(name) {
   pref("tab", name);
   window.scrollTo(0, 0);
   keepAwake(name === "cook");
+  if (name === "plan") { renderRequest(); loadLastRequest(); }
 }
 
 // ---------- 献立 ----------
@@ -532,6 +533,54 @@ function download() {
 // ---------- 献立を作る（入口 2 つと、カテゴリから選ぶ） ----------
 const pick = { kind: M.KINDS[0], group: "", kidOk: false, ids: new Set() };
 
+// 「今回ほしい分」。品数は端末に覚えておく。期間は、開くたびに次の週（月〜金）から始める。
+const need = (() => {
+  let saved = {};
+  try { saved = JSON.parse(pref("need") || "{}") || {}; } catch (e) { saved = {}; }
+  const n = { ...M.NEED_DEFAULT };
+  for (const k of ["breakfast", "dinner", "soup", "dish"]) if (Number.isInteger(saved[k])) n[k] = Math.max(0, Math.min(M.NEED_MAX[k], saved[k]));
+  return n;
+})();
+
+function pickedDishes() {
+  const cat = M.catalog(state);
+  return cat ? [...pick.ids].map((id) => cat.dishes.find((d) => d.id === id)).filter(Boolean) : [];
+}
+
+function renderNeeds() {
+  if (!need.from) { need.from = M.nextPlanWeek(state); need.to = M.addDays(need.from, 4); }
+  $("#need-from").value = need.from;
+  $("#need-to").value = need.to;
+  $("#need-to").min = need.from;
+  $("#need-days").textContent = `${M.daysBetween(need.from, need.to)} 日ぶんの献立を作ります`;
+  $$("#needs .step").forEach((s) => { $("output", s).textContent = need[s.dataset.need]; });
+}
+
+function bindNeeds() {
+  $("#need-from").addEventListener("change", (e) => {
+    if (!e.target.value) return renderNeeds();
+    const span = M.daysBetween(need.from, need.to);
+    need.from = e.target.value;
+    need.to = M.addDays(need.from, Math.max(0, span - 1));
+    renderNeeds(); renderRequest();
+  });
+  $("#need-to").addEventListener("change", (e) => {
+    if (e.target.value && e.target.value >= need.from) need.to = e.target.value;
+    renderNeeds(); renderRequest();
+  });
+  $$("#needs .step button").forEach((b) => b.addEventListener("click", () => {
+    const key = b.closest(".step").dataset.need;
+    const next = need[key] + Number(b.dataset.d);
+    const used = M.slotCounts(pickedDishes())[key] || 0;
+    if (next < 0 || next > M.NEED_MAX[key]) return;
+    if (next < used) { toast("先に、下で選んだ品を外してください"); return; }
+    need[key] = next;
+    pref("need", JSON.stringify({ breakfast: need.breakfast, dinner: need.dinner, soup: need.soup, dish: need.dish }));
+    renderNeeds(); renderRequest();
+    if (!$("#pickbox").hidden) renderPlan();
+  }));
+}
+
 function renderPlan() {
   const cat = M.catalog(state);
   $("#pick-nocat").hidden = !!cat;
@@ -544,7 +593,7 @@ function renderPlan() {
   $$("#grouppills .pill").forEach((p) => p.addEventListener("click", () => { pick.group = p.dataset.group; renderPlan(); }));
   $("#kidok").checked = pick.kidOk;
   const shown = M.filterDishes(cat.dishes, { kind: pick.kind, group: pick.group, kidOk: pick.kidOk });
-  $("#pickcount").textContent = `${shown.length} 品を表示中・${pick.ids.size} 品を選択中`;
+  $("#pickcount").textContent = pickCountText(shown.length);
   $("#picklist").innerHTML = shown.map((d) => {
     const keep = d.kind === "作りおき" ? (d.fridge ? `冷蔵 ${d.fridge}` : "") + (d.freezer_ok ? "・冷凍できる" : "") : d.time_min ? `当日 ${d.time_min} 分` : "当日";
     return `<label class="row${pick.ids.has(d.id) ? " picked" : ""}" data-pick="${esc(d.id)}"><input type="checkbox"${pick.ids.has(d.id) ? " checked" : ""}><span class="box"></span>
@@ -553,12 +602,25 @@ function renderPlan() {
       <span class="amt pg">P.${esc(d.print_page)}</span></label>`;
   }).join("");
   $$("#picklist .row").forEach((row) => $("input", row).addEventListener("change", (e) => {
-    if (e.target.checked) pick.ids.add(row.dataset.pick); else pick.ids.delete(row.dataset.pick);
-    $("#pickcount").textContent = `${shown.length} 品を表示中・${pick.ids.size} 品を選択中`;
+    const id = row.dataset.pick;
+    if (e.target.checked && !M.canPick(cat.dishes, pick.ids, id, need)) {
+      e.target.checked = false;
+      const soup = M.slotOf(cat.dishes.find((d) => d.id === id)) === "soup";
+      toast(`${soup ? "汁物" : "おかず"}は ${soup ? need.soup : need.dish} 品までです。増やすなら、上の「今回ほしい分」で`);
+      return;
+    }
+    if (e.target.checked) pick.ids.add(id); else pick.ids.delete(id);
+    row.classList.toggle("picked", e.target.checked);
+    $("#pickcount").textContent = pickCountText(shown.length);
     renderRequest();
   }));
   renderRequest();
   hydrateThumbs();
+}
+
+function pickCountText(shown) {
+  const used = M.slotCounts(pickedDishes());
+  return `${shown} 品を表示中・汁物 ${used.soup}/${need.soup}・おかず ${used.dish}/${need.dish} を選択中`;
 }
 
 // 品の一覧の小さな写真。サーバーに写真がある品だけ出る（無い品は、生成りの四角のまま）。
@@ -583,26 +645,37 @@ async function hydrateThumbs() {
 }
 
 function currentRequest() {
-  return M.buildRequest(state, [...pick.ids], { kidOk: pick.kidOk, fillRest: $("#fillrest").checked, note: $("#picknote").value });
+  return M.buildRequest(state, [...pick.ids], { kidOk: pick.kidOk, fillRest: $("#fillrest").checked, note: $("#picknote").value, need });
 }
 
 let photosToday = 0;   // 今日送った冷蔵庫の写真の枚数（冷蔵庫タブで数えたもの）
 let lastRequest = null; // サーバーにある、いちばん新しい注文
 
 function renderRequest() {
+  renderNeeds();
   const r = currentRequest();
-  $("#pickweek").textContent = `${M.weekSpan(r.data.week_start)} の週の献立を頼みます`;
+  $("#pickweek").textContent = "いつの分を、何品ほしいかを決めてから、下で選びます。";
+  const picked = pickedDishes();
+  const slotHtml = (key, label) => {
+    const mine = picked.filter((d) => M.slotOf(d) === key);
+    const cells = [];
+    for (let i = 0; i < need[key]; i++) cells.push(mine[i] ? `<span class="slot on">${esc(mine[i].name)}</span>` : `<span class="slot">${label} ${i + 1}</span>`);
+    return cells.join("");
+  };
+  $("#slots").innerHTML = slotHtml("soup", "汁物") + slotHtml("dish", "おかず");
   $("#reqtext").textContent = r.text;
   $("#reqshare").hidden = !navigator.share;
   const cat = M.catalog(state);
   const names = cat ? [...pick.ids].map((id) => (cat.dishes.find((d) => d.id === id) || {}).name).filter(Boolean) : [];
-  $("#pickedsum").textContent = names.length ? `${names.length} 品を選んでいます: ${names.join("、")}` : "まだ選んでいません。選ばなければ、全部おまかせになります。";
+  const open = need.soup + need.dish - names.length;
+  $("#pickedsum").textContent = !names.length ? "まだ選んでいません。空いている枠は、おまかせになります。"
+    : open > 0 ? `${names.length} 品を選びました。空いている ${open} 枠は、おまかせになります。` : "枠がすべて埋まりました。";
   $("#pickclear").hidden = !names.length;
   $("#reqphotos").textContent = photosToday
     ? `今日は冷蔵庫の写真を ${photosToday} 枚送っています。この写真を使って組みます。`
     : "冷蔵庫の写真を送っておくと、家にある物を使い切る献立になります。";
   $("#reqsend").disabled = !cloudUser;
-  if (!cloudUser) $("#reqmsg").textContent = "頼むには、冷蔵庫タブでログインします";
+  if (!cloudUser) $("#reqmsg").textContent = "頼むには、この画面の上でログインします";
   const box = $("#reqstatus");
   box.hidden = !lastRequest;
   if (lastRequest) {
@@ -624,7 +697,7 @@ async function loadLastRequest() {
 
 async function sendRequest() {
   const btn = $("#reqsend");
-  if (!cloudUser || !cloudUser.household) { $("#reqmsg").textContent = "頼むには、冷蔵庫タブでログインします"; return; }
+  if (!cloudUser || !cloudUser.household) { $("#reqmsg").textContent = "頼むには、この画面の上でログインします"; return; }
   btn.disabled = true;
   $("#reqmsg").textContent = "送っています…";
   try {
@@ -669,6 +742,7 @@ async function refreshFridge() {
   else cloudUser.session = session;
   $("#fr-login").hidden = !!cloudUser;
   $("#fr-main").hidden = !cloudUser;
+  $("#logout").hidden = !cloudUser;
   if (!cloudUser) return;
   try {
     if (!cloudUser.household) cloudUser.household = pref("household", await C.myHousehold(session));
@@ -801,7 +875,7 @@ function init() {
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
   $("#door-pick").addEventListener("click", () => { $("#pickbox").hidden = false; renderPlan(); $("#pickbox").scrollIntoView({ block: "start", behavior: "smooth" }); });
   $("#reqsend").addEventListener("click", sendRequest);
-  $$("[data-go=plan]").forEach((b) => b.addEventListener("click", () => { renderRequest(); loadLastRequest(); }));
+  bindNeeds();
   $("#kidok").addEventListener("change", (e) => { pick.kidOk = e.target.checked; renderPlan(); });
   $("#fillrest").addEventListener("change", renderRequest);
   $("#picknote").addEventListener("input", renderRequest);
@@ -837,7 +911,8 @@ function init() {
     refreshFridge();
   });
   renderAll();
-  showTab(M.currentWeek(state) ? pref("tab") || "menu" : "set");
+  const last = pref("tab") === "fridge" ? "plan" : pref("tab"); // 前の版の「冷蔵庫」は「何つくる？」へ
+  showTab(M.currentWeek(state) ? last || "menu" : "set");
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     // 新しい版が届いたら、1 回だけ自動で開き直して新しい画面にする
     const had = !!navigator.serviceWorker.controller;

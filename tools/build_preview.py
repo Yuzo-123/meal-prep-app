@@ -69,7 +69,7 @@ def main():
     banner = ('<p class="previewbar"><b>確認用</b> 版 %s・%s に組み立て・%s の週・料理の写真なし。'
               'ログインと受け取りは、ここでは使えません。</p>' % (version, now.strftime("%m/%d %H:%M"), week["week_start"]))
     body = body.replace('<div class="wrap">', '<div class="wrap">\n' + banner, 1)
-    login_hint = "冷蔵庫の写真を送るには、家族のログインが要ります。最初の 1 回だけです。"
+    login_hint = "献立を頼んだり、冷蔵庫の写真を送ったりするには、家族のログインが要ります。最初の 1 回だけです。"
     if body.count(login_hint) != 1:
         sys.exit("index.html の形が変わっています（ログインの案内が見つからない）")
     body = body.replace(login_hint, "この確認用のページでは、ログインできません（外のサーバーとつながらない作りのため）。"

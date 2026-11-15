@@ -33,29 +33,58 @@
       <div id="panels"></div>
       <button class="btn ghost wide" data-go="plan">次の週の献立を作る</button>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。ログインすると、献立が自動で届きます。</p><button class="btn" data-go="fridge">ログインする</button> <button class="btn ghost" data-go="plan">献立を作る</button></div>
+    <div class="blank"><p>まだ週のデータが入っていません。ログインすると、献立が自動で届きます。</p><button class="btn" data-go="plan">ログインする</button> <button class="btn ghost" data-go="plan">献立を作る</button></div>
   </section>
 
   <section class="view" id="v-plan">
-    <h2>献立を頼む</h2>
+    <h2>何つくる？</h2>
     <p class="hint" id="pickweek"></p>
     <div class="form" id="reqstatus" hidden></div>
+    <h2>今回ほしい分</h2>
+    <div class="form" id="needs">
+      <div class="needrow"><input type="date" id="need-from" aria-label="いつから"><span>〜</span><input type="date" id="need-to" aria-label="いつまで"></div>
+      <p class="hint" id="need-days"></p>
+      <p class="needhead">1 回に出す品数</p>
+      <div class="needgrid">
+        <div class="step" data-need="breakfast"><b>朝</b><button type="button" data-d="-1" aria-label="朝を減らす">−</button><output></output><button type="button" data-d="1" aria-label="朝を増やす">＋</button></div>
+        <div class="step" data-need="dinner"><b>夜</b><button type="button" data-d="-1" aria-label="夜を減らす">−</button><output></output><button type="button" data-d="1" aria-label="夜を増やす">＋</button></div>
+      </div>
+      <p class="needhead">この期間に作る品の数</p>
+      <div class="needgrid">
+        <div class="step" data-need="soup"><b>汁物</b><button type="button" data-d="-1" aria-label="汁物を減らす">−</button><output></output><button type="button" data-d="1" aria-label="汁物を増やす">＋</button></div>
+        <div class="step" data-need="dish"><b>おかず</b><button type="button" data-d="-1" aria-label="おかずを減らす">−</button><output></output><button type="button" data-d="1" aria-label="おかずを増やす">＋</button></div>
+      </div>
+      <p class="hint tip">下の ② で選べるのは、ここで決めた数までです。同じ品を何日か続けて食べる前提で、作る品の数を決めます。</p>
+    </div>
+    <div id="fr-login">
+      <form class="form" id="loginform">
+        <p class="hint">献立を頼んだり、冷蔵庫の写真を送ったりするには、家族のログインが要ります。最初の 1 回だけです。</p>
+        <label>メールアドレス<input id="login-email" type="email" autocomplete="username" inputmode="email" required></label>
+        <label>パスワード<input id="login-pass" type="password" autocomplete="current-password" required></label>
+        <div class="formfoot"><button class="btn" id="loginbtn" type="submit">ログインする</button><span id="loginmsg"></span></div>
+      </form>
+    </div>
 
     <h2>① 冷蔵庫にあるものを使う</h2>
     <div class="form">
       <p class="hint" id="reqphotos">冷蔵庫の写真を送っておくと、家にある物を使い切る献立になります。</p>
-      <div class="formfoot"><button class="btn ghost" data-go="fridge" type="button">冷蔵庫の写真を送る</button></div>
+      <div id="fr-main" hidden>
+        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送った写真は、献立ができたら消します。</p>
+        <label class="btn filebtn">撮る・写真を選ぶ<input type="file" id="photo" accept="image/*" multiple></label>
+        <p class="hint" id="fr-count"></p>
+        <div class="shots" id="shots"></div>
+      </div>
     </div>
 
     <h2>② 食べたいものを選ぶ</h2>
     <div class="form">
+      <div class="slots" id="slots"></div>
       <p class="hint" id="pickedsum"></p>
       <div class="formfoot"><button class="btn ghost" id="door-pick" type="button">カテゴリから選ぶ</button><button class="btn ghost" id="pickclear" type="button">選び直す</button></div>
     </div>
     <div id="pickbox" hidden>
       <div id="pick-nocat" class="form" hidden>
-        <p class="hint">品の一覧がまだ届いていません。「冷蔵庫」タブでログインすると届きます。</p>
-        <div class="formfoot"><button class="btn ghost" data-go="fridge" type="button">ログインする</button></div>
+        <p class="hint">品の一覧がまだ届いていません。この画面の上でログインすると届きます。</p>
       </div>
       <div id="pick-main" hidden>
         <div class="sticky">
@@ -80,6 +109,7 @@
         <div class="formfoot"><button class="btn ghost" id="reqcopy" type="button">注文をコピーする</button><button class="btn ghost" id="reqshare" type="button" hidden>共有する</button></div>
       </details>
     </div>
+    <button class="reset" id="logout" hidden>ログアウトする</button>
   </section>
 
   <section class="view" id="v-shop">
@@ -163,29 +193,6 @@
     <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
   </section>
 
-  <section class="view" id="v-fridge">
-    <div id="fr-login">
-      <h2>ログイン</h2>
-      <form class="form" id="loginform">
-        <p class="hint">冷蔵庫の写真を送るには、家族のログインが要ります。最初の 1 回だけです。</p>
-        <label>メールアドレス<input id="login-email" type="email" autocomplete="username" inputmode="email" required></label>
-        <label>パスワード<input id="login-pass" type="password" autocomplete="current-password" required></label>
-        <div class="formfoot"><button class="btn" id="loginbtn" type="submit">ログインする</button><span id="loginmsg"></span></div>
-      </form>
-    </div>
-    <div id="fr-main" hidden>
-      <h2>冷蔵庫の写真を送る</h2>
-      <div class="form">
-        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送ったら、下の「献立を頼む」へ進みます。送った写真は、献立ができたら消します。</p>
-        <label class="btn filebtn">撮る・写真を選ぶ<input type="file" id="photo" accept="image/*" multiple></label>
-        <p class="hint" id="fr-count"></p>
-        <div class="formfoot"><button class="btn ghost" data-go="plan" type="button">献立を頼む</button></div>
-      </div>
-      <div class="shots" id="shots"></div>
-      <button class="reset" id="logout">ログアウトする</button>
-    </div>
-  </section>
-
   <section class="view" id="v-set">
     <h2>週のデータを取り込む</h2>
     <div class="form">
@@ -212,10 +219,10 @@
 <div id="toast" role="status" aria-live="polite"></div>
 
 <nav class="tabs"><div>
+  <button data-tab="plan"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.7a2.5 2.5 0 1 1 3.7 2.2c-.8.5-1.3 1-1.3 2M12 16.7v.1"/></svg><small class="badge" id="tfridge"></small></span><b>何つくる？</b></button>
   <button data-tab="menu"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4M8.5 14.5h2M13.5 14.5h2"/></svg></span><b>献立</b></button>
   <button data-tab="shop"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 10h15l-1.6 8.6a2 2 0 0 1-2 1.6H8.1a2 2 0 0 1-2-1.6L4.5 10zM9 10l3-6 3 6M10 14v3M14 14v3"/></svg><small class="badge" id="tshop"></small></span><b>買い物</b></button>
   <button data-tab="cook"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 11h14v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4v-5zM3 11h18M9.5 7.5c0-1.2 1-1.6 1-3M14 7.5c0-1.2 1-1.6 1-3"/></svg><small class="badge" id="tcook"></small></span><b>料理</b></button>
-  <button data-tab="fridge"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2.5"/><path d="M6 10h12M9 6v2M9 13v3"/></svg><small class="badge" id="tfridge"></small></span><b>冷蔵庫</b></button>
   <button data-tab="note"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM15 3v4h4M9 12h6M9 16h6"/></svg><small class="badge" id="tnote"></small></span><b>メモ</b></button>
 </div></nav>
 

@@ -161,24 +161,73 @@ export const DAY_SHAPE = {
   text: "夜は 汁物・主菜（肉か魚）・副菜 の 3 品。朝は夜と同じ汁物を回す",
 };
 
+// 「今回ほしい分」の初めの値。朝 1 品（夜の汁物を回す）・夜 3 品。作る品は、汁物 2・おかず 4。
+export const NEED_DEFAULT = { from: "", to: "", breakfast: 1, dinner: 3, soup: 2, dish: 4 };
+export const NEED_MAX = { breakfast: 4, dinner: 6, soup: 7, dish: 14 };
+
+// 品がどちらの枠に入るか。本の区分が「スープ」なら汁物、ほかは全部おかず。
+export function slotOf(d) {
+  return d && d.group === "スープ" ? "soup" : "dish";
+}
+
+export function slotCounts(dishes) {
+  const n = { soup: 0, dish: 0 };
+  for (const d of dishes) n[slotOf(d)]++;
+  return n;
+}
+
+// 枠が残っていれば true。枠は「今回ほしい分」の 汁物・おかず の数。
+export function canPick(dishes, pickedIds, id, need) {
+  const byId = new Map(dishes.map((d) => [d.id, d]));
+  const d = byId.get(id);
+  if (!d) return false;
+  const used = slotCounts([...pickedIds].map((x) => byId.get(x)).filter(Boolean));
+  const slot = slotOf(d);
+  return used[slot] < ({ ...NEED_DEFAULT, ...need })[slot];
+}
+
+function parts(isoDate) { return isoDate.split("-").map(Number); }
+export function addDays(isoDate, n) { const [y, m, d] = parts(isoDate); return iso(new Date(y, m - 1, d + n)); }
+export function daysBetween(from, to) {
+  const [y1, m1, d1] = parts(from), [y2, m2, d2] = parts(to);
+  return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000) + 1;
+}
+export function mondayOf(isoDate) {
+  const [y, m, d] = parts(isoDate);
+  const dow = new Date(y, m - 1, d).getDay();
+  return addDays(isoDate, -((dow + 6) % 7));
+}
+function md(isoDate) { const [, m, d] = parts(isoDate); return `${m}/${d}`; }
+
 export function buildRequest(state, picks, opts = {}, now = new Date()) {
   const cat = catalog(state);
   const byId = new Map((cat ? cat.dishes : []).map((d) => [d.id, d]));
   const chosen = picks.map((id) => byId.get(id)).filter(Boolean);
-  const week = opts.week_start || nextPlanWeek(state, now);
+  const need = { ...NEED_DEFAULT, ...(opts.need || {}) };
+  const week = opts.week_start || (need.from ? mondayOf(need.from) : nextPlanWeek(state, now));
+  const from = need.from || week;
+  const to = need.to && need.to >= from ? need.to : addDays(from, need.from ? 0 : 4);
+  const used = slotCounts(chosen);
   const data = {
     format: "mealprep-request", version: 1, household: state.household, week_start: week,
     picks: chosen.map((d) => d.id), fill_rest: opts.fillRest !== false, kid_ok_only: !!opts.kidOk, note: (opts.note || "").trim(),
+    period: { from, to, days: daysBetween(from, to) },
+    meals: { breakfast: need.breakfast, dinner: need.dinner },
+    slots: { soup: need.soup, dish: need.dish },
     day_shape: DAY_SHAPE,
   };
+  const basic = need.breakfast === NEED_DEFAULT.breakfast && need.dinner === NEED_DEFAULT.dinner;
   const lines = [
     `【献立の注文】${weekSpan(week)} の週`,
+    `期間: ${md(from)}〜${md(to)}（${data.period.days} 日）`,
+    `1 回に出す品数: 朝 ${need.breakfast} 品・夜 ${need.dinner} 品`,
+    `この期間に作る品の数: 汁物 ${need.soup} 品・おかず ${need.dish} 品（選んだのは 汁物 ${used.soup}・おかず ${used.dish}）`,
     chosen.length ? "作りたい品:" : "作りたい品: 指定なし（全部おまかせ）",
     ...chosen.map((d) => `・${d.name}（${d.id}・P.${d.print_page}・${d.kind}）`),
     `足りない分: ${data.fill_rest ? "おまかせ" : "足さない"}`,
     `取り分け注意の品: ${data.kid_ok_only ? "除く" : "入れてよい"}`,
-    `1 日の型: ${DAY_SHAPE.text}`,
   ];
+  if (basic) lines.push(`1 日の型: ${DAY_SHAPE.text}`);
   if (data.note) lines.push(`ひとこと: ${data.note}`);
   return { data, text: lines.join("\n") };
 }
