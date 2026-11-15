@@ -2,8 +2,9 @@
 import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
+import * as P from "./planner.js";
 
-export const APP_VERSION = "0.11.13"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.0"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -497,6 +498,12 @@ function switchWeek(k) {
   M.home(next).current = k;
   commit(next);
   renderAll();
+  renderRequest();
+  // 切り替えた先の週の写真が端末に無ければ、ここで取り込む（開き直さなくても出るように）
+  const cur = M.currentWeek(state);
+  if (cur && cloudUser && cloudUser.household) {
+    C.cachePhotos(cloudUser.session, cloudUser.household, M.photoIds(cur), hydratePhotos).catch(() => {});
+  }
 }
 
 function takeIn(text) {
@@ -575,7 +582,8 @@ function renderNeeds() {
   $("#need-from").value = need.from;
   $("#need-to").value = need.to;
   $("#need-to").min = need.from;
-  $("#need-days").textContent = `${slots.days} 日ぶんの献立を作ります`;
+  $("#need-days").textContent = slots.cookDays === slots.days ? `${slots.days} 日ぶんの献立を作ります`
+    : slots.cookDays ? `献立に入るのは、月〜金の ${slots.cookDays} 日ぶんです（土日はまだ組めません）` : "月〜金の日が入っていません。期間を選び直してください";
   $$("#needs .step").forEach((s) => { $("output", s).textContent = need[s.dataset.need]; });
   $("#need-dinner").textContent = `計 ${slots.dinner} 品`;
   $("#need-breakfast").textContent = `計 ${slots.breakfast} 品`;
@@ -731,20 +739,37 @@ function renderRequest() {
     const when = new Date(lastRequest.created_at);
     const at = `${when.getMonth() + 1}/${when.getDate()} ${when.getHours()}:${String(when.getMinutes()).padStart(2, "0")}`;
     const h = M.home(state);
-    const arrived = lastRequest.status === "done" && h.weeks[lastRequest.week_start];
+    const mine = h.weeks[lastRequest.week_start];
+    const arrived = mine && (lastRequest.status === "done" || mine.draft);
     const see = !arrived ? "" : h.current === lastRequest.week_start
       ? `<p class="hint">いま、この週を表示しています。</p>`
       : `<div class="formfoot"><button type="button" class="btn" data-seeweek="${esc(lastRequest.week_start)}">この週を見る</button><span>いまは ${esc(M.weekSpan(h.current))} の週を表示中</span></div>`;
-    const label = { new: "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります", working: "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
+    const label = { new: mine && mine.draft ? "献立と買い物は、もう出ています。日曜の段取りと詳しい手順は、あとから届きます" : "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります",
+      working: mine && mine.draft ? "献立と買い物は、もう出ています。いま、日曜の段取りを足しています" : "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
       failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
     box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>${see}`;
   }
+}
+
+// 注文に添えてある下書き（頼んだ端末がその場で組んだ献立）を、この端末にも入れる。表示中の週は変えない。
+function takeDraft(req) {
+  if (!req || !req.draft || !["new", "working"].includes(req.status)) return;
+  const h = M.home(state);
+  const have = h.weeks[req.week_start];
+  if (have && (have.exported_at === req.draft.exported_at || !have.draft && have.exported_at > req.draft.exported_at)) return;
+  try {
+    const keep = h.current;
+    const next = M.importBundle(state, { ...req.draft, household: state.household });
+    if (keep) M.home(next).current = keep;
+    if (commit(next)) renderAll();
+  } catch (e) { /* 下書きが読めなくても、できあがった献立はあとで届く */ }
 }
 
 async function loadLastRequest() {
   if (!cloudUser || !cloudUser.household) return;
   try {
     lastRequest = await C.latestRequest(cloudUser.session, cloudUser.household);
+    takeDraft(lastRequest);
     renderRequest();
   } catch (e) { /* 見られなくても、頼むことはできる */ }
 }
@@ -757,15 +782,33 @@ async function sendRequest() {
   try {
     const session = await C.ensureSession();
     const r = currentRequest();
-    lastRequest = await C.sendRequest(session, cloudUser.household, { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text });
+    let draft = null;
+    if (P.canAutoPlan(state)) {
+      const old = M.home(state).weeks[r.data.week_start];
+      if (old && !old.draft && !confirm(`${M.weekSpan(r.data.week_start)} の週は、もう献立があります。作り直しますか？（いまの献立は、新しいものに置き換わります）`)) {
+        $("#reqmsg").textContent = ""; btn.disabled = false; return;
+      }
+      try { draft = P.autoPlan(state, [...pick.ids], { need, fillRest: $("#fillrest").checked }); } catch (e) { draft = null; }
+    }
+    lastRequest = await C.sendRequest(session, cloudUser.household, { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text, ...(draft ? { draft } : {}) });
+    if (draft) lastRequest.draft = draft;
     $("#reqmsg").textContent = "";
     $("#picknote").value = "";
     pick.ids.clear();
     if (!$("#pickbox").hidden) renderPlan(); else renderRequest();
     needDecided = false; needAuto = true;
-    renderRequest();
-    toast("献立を頼みました。これから組むので、すぐには変わりません");
-    window.scrollTo(0, 0);
+    if (draft && commit(M.importBundle(state, draft))) {
+      // その場で組んだ献立を、すぐ画面に出す
+      renderAll();
+      renderRequest();
+      C.cachePhotos(session, cloudUser.household, M.photoIds(draft), hydratePhotos).catch(() => {});
+      showTab("menu");
+      toast("献立と買い物を組みました。日曜の段取りは、あとから届きます");
+    } else {
+      renderRequest();
+      toast("献立を頼みました。これから組むので、すぐには変わりません");
+      window.scrollTo(0, 0);
+    }
   } catch (e) {
     $("#reqmsg").textContent = e.message;
   }
@@ -807,6 +850,7 @@ async function refreshFridge() {
     $("#tfridge").textContent = n ? n : "";
     photosToday = n;
     renderRequest();
+    loadLastRequest(); // ログインの確認が済んでから、いちばん新しい注文を読み直す
   } catch (e) {
     $("#fr-count").textContent = e.message;
   }

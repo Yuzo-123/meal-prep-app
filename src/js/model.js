@@ -170,9 +170,17 @@ export const KEEP_DAYS = 3; // 同じ品を続けて出す日数の上限。作�
 // この期間に作る品の数。汁物は朝も夜と同じものを回すので、朝と夜の多いほうで数える。
 export function needSlots(need) {
   const n = { ...NEED_DEFAULT, ...need };
-  const days = n.from && n.to && n.to >= n.from ? daysBetween(n.from, n.to) : 5;
-  const kinds = (perDay) => Math.ceil((days * perDay) / KEEP_DAYS);
-  return { days, soup: kinds(Math.max(n.bSoup, n.dSoup)), dish: kinds(n.bDish + n.dDish), breakfast: n.bSoup + n.bDish, dinner: n.dSoup + n.dDish };
+  const ok = n.from && n.to && n.to >= n.from;
+  const days = ok ? daysBetween(n.from, n.to) : 5;
+  // 献立に入るのは月〜金。期間のうち、始まりの週の月〜金に当たる日を数える
+  let cookDays = 5;
+  if (ok) {
+    const week = mondayOf(n.from);
+    cookDays = [0, 1, 2, 3, 4].filter((i) => { const d = addDays(week, i); return d >= n.from && d <= n.to; }).length;
+  }
+  // 同じ品を KEEP_DAYS 日まで続けて出す。日をかたまりに分け、かたまりごとに 1 品ずつ要る
+  const chunks = Math.ceil(cookDays / KEEP_DAYS);
+  return { days, cookDays, soup: Math.max(n.bSoup, n.dSoup) * chunks, dish: (n.bDish + n.dDish) * chunks, breakfast: n.bSoup + n.bDish, dinner: n.dSoup + n.dDish };
 }
 
 // 品がどちらの枠に入るか。本の区分が「スープ」なら汁物、ほかは全部おかず。

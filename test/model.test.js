@@ -372,15 +372,107 @@ test("今回ほしい分: 期間・品数・枠が注文に入り、枠を超え
 
 test("今回ほしい分: 1 回に出す品数から、この期間に作る品の数が自動で出る", () => {
   // 基本: 月〜金の 5 日・夜は 汁物 1＋おかず 2・朝は夜の汁物を回す → 汁物 2 品・おかず 4 品
-  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-27" }), { days: 5, soup: 2, dish: 4, breakfast: 1, dinner: 3 });
+  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-27" }), { days: 5, cookDays: 5, soup: 2, dish: 4, breakfast: 1, dinner: 3 });
   // 3 日なら、同じ品を 3 日続けて出せるので 汁物 1・おかず 2
-  assert.deepEqual(M.needSlots({ from: "2026-11-25", to: "2026-11-27" }), { days: 3, soup: 1, dish: 2, breakfast: 1, dinner: 3 });
-  // 7 日・朝にもおかず 1 品 → 汁物 3・おかず 7
-  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-29", bDish: 1 }), { days: 7, soup: 3, dish: 7, breakfast: 2, dinner: 3 });
+  assert.deepEqual(M.needSlots({ from: "2026-11-25", to: "2026-11-27" }), { days: 3, cookDays: 3, soup: 1, dish: 2, breakfast: 1, dinner: 3 });
+  // 7 日を選んでも、献立に入るのは月〜金の 5 日。朝にもおかず 1 品 → 汁物 2・おかず 6
+  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-29", bDish: 1 }), { days: 7, cookDays: 5, soup: 2, dish: 6, breakfast: 2, dinner: 3 });
   // 汁物なし
   assert.equal(M.needSlots({ from: "2026-11-23", to: "2026-11-27", bSoup: 0, dSoup: 0 }).soup, 0);
   const r = M.buildRequest(M.emptyState(), [], { need: { from: "2026-11-23", to: "2026-11-27" } }, new Date(2026, 10, 21));
   assert.deepEqual(r.data.slots, { soup: 2, dish: 4 });
   assert.ok(r.text.includes("1 回に出す品数: 夜 3 品（汁物 1・おかず 2）・朝 1 品（汁物 1）"));
   assert.ok(r.text.includes("1 日の型:"));
+});
+
+// ---------- アプリの中で献立と買い物を組む（planner.js） ----------
+import * as P from "../src/js/planner.js";
+
+function planState() {
+  const ing = (rows) => rows.map(([n, a, x, y, u, p, s]) => [n, a, x, y, u, p || 0, s ?? 2]);
+  const d = (id, name, group, extra = {}) => ({ id, name, kind: "作りおき", group, section: name, print_page: 1, fridge: "3〜4日", fridge_days: 4,
+    freezer: "2週間", freezer_ok: true, time_min: null, kid_caution: false, servings_n: 4, unsure: false,
+    ing: ing([["にんじん", "1/2本", 1, 2, "本"], ["塩", "少々", null, null, null, 1], [name + "の具", "200g", 200, 1, "g", 0, 0]]), ...extra });
+  const dishes = [
+    d("s1", "みそ汁", "スープ"), d("s2", "豚汁", "スープ"), d("s3", "トマトスープ", "スープ"),
+    d("m1", "煮豚", "肉"), d("m2", "鶏の照り焼き", "肉"), d("f1", "鮭の南蛮", "魚介"), d("f2", "たらのトマト煮", "魚介"),
+    d("v1", "にんじんナムル", "野菜"), d("v2", "白菜の塩煮", "野菜"), d("v3", "きのこマリネ", "野菜"), d("e1", "味つけ卵", "卵・豆製品"),
+    d("k1", "辛いチキン", "肉", { kid_caution: true }), d("u1", "読めなかった品", "肉", { unsure: true }),
+  ];
+  return M.importCatalog(M.emptyState(), { format: "mealprep-catalog", version: 1, book: "本", dishes });
+}
+const NEED = { from: "2026-11-23", to: "2026-11-27" };
+const rng0 = () => 0;
+
+test("アプリの中で組む: 基本の型なら、汁物 2・おかず 4 で月〜金が埋まる", () => {
+  const s = planState();
+  assert.equal(P.canAutoPlan(s), true);
+  const b = P.autoPlan(s, [], { need: NEED }, rng0, new Date(2026, 10, 21, 9, 0, 0));
+  assert.deepEqual(M.validateBundle(b), []);
+  assert.equal(b.week_start, "2026-11-23");
+  assert.equal(b.draft, true);
+  for (const day of M.DAYS) {
+    assert.equal(b.days[day]["朝"].length, 1, day + " の朝は汁物 1 品");
+    assert.equal(b.days[day]["夜"].length, 3, day + " の夜は 3 品");
+    assert.equal(b.days[day]["朝"][0].id, b.days[day]["夜"][0].id, "朝は夜と同じ汁物");
+  }
+  // 月〜水と木・金で、品が入れ替わる
+  assert.notEqual(b.days["月"]["夜"][0].id, b.days["木"]["夜"][0].id);
+  assert.equal(b.days["月"]["夜"][1].id, b.days["水"]["夜"][1].id);
+  assert.equal(b.cook_sunday.length, 6);
+  // 子どもの取り分けに注意が要る品・読み取りに印がある品は、おまかせでは選ばない
+  const ids = b.cook_sunday.map((c) => c.id);
+  assert.ok(!ids.includes("k1") && !ids.includes("u1"));
+  // 主菜は、かたまりごとに魚と肉が入れ替わる
+  const cat = M.catalog(s).dishes;
+  const groupOf = (id) => cat.find((x) => x.id === id).group;
+  assert.equal(groupOf(b.days["月"]["夜"][1].id), "魚介");
+  assert.equal(groupOf(b.days["木"]["夜"][1].id), "肉");
+});
+
+test("アプリの中で組む: 作る回数と買い物の量を、食べる回数から出す", () => {
+  const b = P.autoPlan(planState(), [], { need: NEED }, rng0);
+  const soupA = b.cook_sunday.find((c) => c.id === b.days["月"]["夜"][0].id);
+  // 月〜水の朝と夜で 6 食 × 2.5 人 = 15 人分。4 人分の品なら 4 回分（1 人分までの不足は見逃す）
+  assert.equal(soupA.batches, 4);
+  const mainA = b.cook_sunday.find((c) => c.id === b.days["月"]["夜"][1].id);
+  assert.equal(mainA.batches, 2); // 3 食 × 2.5 = 7.5 人分 → 2 回分
+  const carrot = b.shopping.buy.find((x) => x.name === "にんじん");
+  const total = b.cook_sunday.reduce((n, c) => n + c.batches, 0);
+  assert.equal(carrot.amount, P.fmtFrac(total, 2) + "本"); // どの品も 1/2 本ずつ
+  assert.equal(carrot.for.length, 6);
+  assert.deepEqual(b.shopping.pantry, ["塩"]);
+  assert.equal(b.sunday.materials.items.length, b.shopping.buy.length);
+  assert.equal(P.fmtFrac(5, 2), "2と1/2");
+  assert.equal(P.fmtFrac(4, 2), "2");
+  assert.equal(P.fmtFrac(1, 3), "1/3");
+});
+
+test("アプリの中で組む: 選んだ品は必ず入り、前の週の品は後回しになる", () => {
+  let s = planState();
+  const first = P.autoPlan(s, ["m1", "s2"], { need: NEED }, rng0);
+  const ids = first.cook_sunday.map((c) => c.id);
+  assert.ok(ids.includes("m1") && ids.includes("s2"));
+  assert.equal(first.days["月"]["夜"][0].id, "s2"); // 選んだ汁物は、最初のかたまりに入る
+  // 次の週は、前の週に出した野菜のおかずを避ける
+  s = M.importBundle(s, first);
+  const next = P.autoPlan(s, [], { need: { from: "2026-11-30", to: "2026-12-04" } }, rng0);
+  assert.equal(next.week_start, "2026-11-30");
+  const veg = (b) => b.cook_sunday.map((c) => c.id).filter((id) => id.startsWith("v"));
+  assert.ok(veg(next).some((id) => !veg(first).includes(id)), "前の週と違う野菜のおかずが入る");
+  // 「足さない」なら、選んだ品だけ
+  const only = P.autoPlan(planState(), ["m1"], { need: NEED, fillRest: false }, rng0);
+  assert.deepEqual(only.cook_sunday.map((c) => c.id), ["m1"]);
+});
+
+test("アプリの中で組む: 日持ちを超える日は、冷凍の注意が付く", () => {
+  const b = P.autoPlan(planState(), [], { need: NEED }, rng0);
+  // 冷蔵 3〜4 日の品を木・金に出すと、金曜（日曜から 5 日後）が超える
+  assert.ok(b.notes.some((n) => n.includes("金曜の分が冷蔵 3〜4日 を超えます")));
+  assert.ok(b.notes[0].includes("アプリがその場で組んだ献立です"));
+  // 期間が 3 日なら、かたまりは 1 つで、汁物 1・おかず 2
+  const short = P.autoPlan(planState(), [], { need: { from: "2026-11-25", to: "2026-11-27" } }, rng0);
+  assert.equal(short.cook_sunday.length, 3);
+  assert.deepEqual(short.days["月"]["夜"], []);
+  assert.equal(short.days["水"]["夜"].length, 3);
 });

@@ -144,7 +144,7 @@ export async function sendRequest(session, household, data) {
 }
 
 export async function latestRequest(session, household) {
-  const rows = await call(`/rest/v1/requests?select=id,created_at,week_start,status,status_note&household=eq.${encodeURIComponent(household)}&order=created_at.desc&limit=1`,
+  const rows = await call(`/rest/v1/requests?select=id,created_at,week_start,status,status_note,draft:payload->draft&household=eq.${encodeURIComponent(household)}&order=created_at.desc&limit=1`,
     { token: session.access_token });
   return rows && rows.length ? rows[0] : null;
 }
