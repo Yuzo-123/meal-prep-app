@@ -42,19 +42,33 @@
     <div class="form" id="reqstatus" hidden></div>
     <h2>今回ほしい分</h2>
     <div class="form" id="needs">
-      <div class="needrow"><input type="date" id="need-from" aria-label="いつから"><span>〜</span><input type="date" id="need-to" aria-label="いつまで"></div>
-      <p class="hint" id="need-days"></p>
-      <p class="needhead">1 回に出す品数</p>
-      <div class="needgrid">
-        <div class="step" data-need="breakfast"><b>朝</b><button type="button" data-d="-1" aria-label="朝を減らす">−</button><output></output><button type="button" data-d="1" aria-label="朝を増やす">＋</button></div>
-        <div class="step" data-need="dinner"><b>夜</b><button type="button" data-d="-1" aria-label="夜を減らす">−</button><output></output><button type="button" data-d="1" aria-label="夜を増やす">＋</button></div>
+      <div class="needbox" id="need-edit">
+        <p class="needhead">期間</p>
+        <div class="needrow"><label>いつから<input type="date" id="need-from"></label><label>いつまで<input type="date" id="need-to"></label></div>
+        <p class="hint" id="need-days"></p>
+        <p class="needhead">1 回に出す品数</p>
+        <div class="mealbox">
+          <p class="mealhead"><b>夜</b><span id="need-dinner"></span></p>
+          <div class="needgrid">
+            <div class="step" data-need="dSoup"><b>汁物</b><button type="button" data-d="-1" aria-label="夜の汁物を減らす">−</button><output></output><button type="button" data-d="1" aria-label="夜の汁物を増やす">＋</button></div>
+            <div class="step" data-need="dDish"><b>おかず</b><button type="button" data-d="-1" aria-label="夜のおかずを減らす">−</button><output></output><button type="button" data-d="1" aria-label="夜のおかずを増やす">＋</button></div>
+          </div>
+        </div>
+        <div class="mealbox">
+          <p class="mealhead"><b>朝</b><span id="need-breakfast"></span></p>
+          <div class="needgrid">
+            <div class="step" data-need="bSoup"><b>汁物</b><button type="button" data-d="-1" aria-label="朝の汁物を減らす">−</button><output></output><button type="button" data-d="1" aria-label="朝の汁物を増やす">＋</button></div>
+            <div class="step" data-need="bDish"><b>おかず</b><button type="button" data-d="-1" aria-label="朝のおかずを減らす">−</button><output></output><button type="button" data-d="1" aria-label="朝のおかずを増やす">＋</button></div>
+          </div>
+          <p class="hint">朝の汁物は、夜と同じものを回します。</p>
+        </div>
+        <div class="needauto"><span>この期間に作る品の数</span><b id="need-auto"></b><small>同じ品を 3 日まで続けて出す計算です。</small></div>
+        <button class="btn wide" id="need-ok" type="button">これで決める</button>
       </div>
-      <p class="needhead">この期間に作る品の数</p>
-      <div class="needgrid">
-        <div class="step" data-need="soup"><b>汁物</b><button type="button" data-d="-1" aria-label="汁物を減らす">−</button><output></output><button type="button" data-d="1" aria-label="汁物を増やす">＋</button></div>
-        <div class="step" data-need="dish"><b>おかず</b><button type="button" data-d="-1" aria-label="おかずを減らす">−</button><output></output><button type="button" data-d="1" aria-label="おかずを増やす">＋</button></div>
+      <div class="needbox" id="need-done" hidden>
+        <p class="needsum" id="need-sum"></p>
+        <div class="formfoot"><button class="btn ghost" id="need-change" type="button">変える</button><span>決めた枠に、下の ② で料理を当てはめます。</span></div>
       </div>
-      <p class="hint tip">下の ② で選べるのは、ここで決めた数までです。同じ品を何日か続けて食べる前提で、作る品の数を決めます。</p>
     </div>
     <div id="fr-login">
       <form class="form" id="loginform">

@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.8"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.11"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -533,52 +533,77 @@ function download() {
 // ---------- 献立を作る（入口 2 つと、カテゴリから選ぶ） ----------
 const pick = { kind: M.KINDS[0], group: "", kidOk: false, ids: new Set() };
 
-// 「今回ほしい分」。品数は端末に覚えておく。期間は、開くたびに次の週（月〜金）から始める。
+// 「今回ほしい分」。1 回に出す品数は端末に覚えておく。期間は、開くたびに次の週（月〜金）から始める。
+const NEED_KEYS = ["bSoup", "bDish", "dSoup", "dDish"];
 const need = (() => {
   let saved = {};
   try { saved = JSON.parse(pref("need") || "{}") || {}; } catch (e) { saved = {}; }
   const n = { ...M.NEED_DEFAULT };
-  for (const k of ["breakfast", "dinner", "soup", "dish"]) if (Number.isInteger(saved[k])) n[k] = Math.max(0, Math.min(M.NEED_MAX[k], saved[k]));
+  for (const k of NEED_KEYS) if (Number.isInteger(saved[k])) n[k] = Math.max(0, Math.min(M.NEED_MAX[k], saved[k]));
   return n;
 })();
+let needDecided = false; // 「これで決める」を押すまでは、枠ができない
 
 function pickedDishes() {
   const cat = M.catalog(state);
   return cat ? [...pick.ids].map((id) => cat.dishes.find((d) => d.id === id)).filter(Boolean) : [];
 }
 
+const mdText = (isoDate) => { const [, m, d] = isoDate.split("-").map(Number); return `${m}/${d}`; };
+const partText = (s, d) => [s ? `汁物 ${s}` : "", d ? `おかず ${d}` : ""].filter(Boolean).join("・");
+
 function renderNeeds() {
   if (!need.from) { need.from = M.nextPlanWeek(state); need.to = M.addDays(need.from, 4); }
+  const slots = M.needSlots(need);
+  $("#need-edit").hidden = needDecided;
+  $("#need-done").hidden = !needDecided;
   $("#need-from").value = need.from;
   $("#need-to").value = need.to;
   $("#need-to").min = need.from;
-  $("#need-days").textContent = `${M.daysBetween(need.from, need.to)} 日ぶんの献立を作ります`;
+  $("#need-days").textContent = `${slots.days} 日ぶんの献立を作ります`;
   $$("#needs .step").forEach((s) => { $("output", s).textContent = need[s.dataset.need]; });
+  $("#need-dinner").textContent = `計 ${slots.dinner} 品`;
+  $("#need-breakfast").textContent = `計 ${slots.breakfast} 品`;
+  $("#need-auto").textContent = `汁物 ${slots.soup} 品・おかず ${slots.dish} 品`;
+  $("#need-sum").textContent = [
+    `期間　${mdText(need.from)}〜${mdText(need.to)}（${slots.days} 日）`,
+    `夜　${slots.dinner} 品${slots.dinner ? `（${partText(need.dSoup, need.dDish)}）` : ""}`,
+    `朝　${slots.breakfast} 品${slots.breakfast ? `（${partText(need.bSoup, need.bDish)}）` : ""}`,
+    `作る品　汁物 ${slots.soup} 品・おかず ${slots.dish} 品`,
+  ].join("\n");
 }
 
 function bindNeeds() {
+  const changed = () => { renderNeeds(); renderRequest(); };
   $("#need-from").addEventListener("change", (e) => {
     if (!e.target.value) return renderNeeds();
     const span = M.daysBetween(need.from, need.to);
     need.from = e.target.value;
     need.to = M.addDays(need.from, Math.max(0, span - 1));
-    renderNeeds(); renderRequest();
+    changed();
   });
   $("#need-to").addEventListener("change", (e) => {
     if (e.target.value && e.target.value >= need.from) need.to = e.target.value;
-    renderNeeds(); renderRequest();
+    changed();
   });
   $$("#needs .step button").forEach((b) => b.addEventListener("click", () => {
     const key = b.closest(".step").dataset.need;
     const next = need[key] + Number(b.dataset.d);
-    const used = M.slotCounts(pickedDishes())[key] || 0;
     if (next < 0 || next > M.NEED_MAX[key]) return;
-    if (next < used) { toast("先に、下で選んだ品を外してください"); return; }
     need[key] = next;
-    pref("need", JSON.stringify({ breakfast: need.breakfast, dinner: need.dinner, soup: need.soup, dish: need.dish }));
-    renderNeeds(); renderRequest();
-    if (!$("#pickbox").hidden) renderPlan();
+    pref("need", JSON.stringify(Object.fromEntries(NEED_KEYS.map((k) => [k, need[k]]))));
+    changed();
   }));
+  $("#need-ok").addEventListener("click", () => {
+    const slots = M.needSlots(need), used = M.slotCounts(pickedDishes());
+    if (!slots.soup && !slots.dish) { toast("品数が 0 です。夜か朝の品数を足してください"); return; }
+    if (used.soup > slots.soup || used.dish > slots.dish) { toast("選んである品が、枠より多くなります。先に下の「選び直す」で外してください"); return; }
+    needDecided = true;
+    renderRequest();
+    if (!$("#pickbox").hidden) renderPlan();
+    $("#needs").scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+  $("#need-change").addEventListener("click", () => { needDecided = false; renderRequest(); });
 }
 
 function renderPlan() {
@@ -603,10 +628,16 @@ function renderPlan() {
   }).join("");
   $$("#picklist .row").forEach((row) => $("input", row).addEventListener("change", (e) => {
     const id = row.dataset.pick;
-    if (e.target.checked && !M.canPick(cat.dishes, pick.ids, id, need)) {
+    if (e.target.checked && !needDecided) {
+      e.target.checked = false;
+      toast("先に、上の「今回ほしい分」で「これで決める」を押してください");
+      return;
+    }
+    const slots = M.needSlots(need);
+    if (e.target.checked && !M.canPick(cat.dishes, pick.ids, id, slots)) {
       e.target.checked = false;
       const soup = M.slotOf(cat.dishes.find((d) => d.id === id)) === "soup";
-      toast(`${soup ? "汁物" : "おかず"}は ${soup ? need.soup : need.dish} 品までです。増やすなら、上の「今回ほしい分」で`);
+      toast(`${soup ? "汁物" : "おかず"}の枠は ${soup ? slots.soup : slots.dish} 品で、もう埋まっています`);
       return;
     }
     if (e.target.checked) pick.ids.add(id); else pick.ids.delete(id);
@@ -619,8 +650,8 @@ function renderPlan() {
 }
 
 function pickCountText(shown) {
-  const used = M.slotCounts(pickedDishes());
-  return `${shown} 品を表示中・汁物 ${used.soup}/${need.soup}・おかず ${used.dish}/${need.dish} を選択中`;
+  const used = M.slotCounts(pickedDishes()), slots = M.needSlots(need);
+  return `${shown} 品を表示中・汁物 ${used.soup}/${slots.soup}・おかず ${used.dish}/${slots.dish} を選択中`;
 }
 
 // 品の一覧の小さな写真。サーバーに写真がある品だけ出る（無い品は、生成りの四角のまま）。
@@ -654,12 +685,13 @@ let lastRequest = null; // サーバーにある、いちばん新しい注文
 function renderRequest() {
   renderNeeds();
   const r = currentRequest();
-  $("#pickweek").textContent = "いつの分を、何品ほしいかを決めてから、下で選びます。";
+  $("#pickweek").textContent = "いつの分を、1 回に何品ほしいかを決めてから、下で選びます。";
+  const slots = M.needSlots(need);
   const picked = pickedDishes();
   const slotHtml = (key, label) => {
     const mine = picked.filter((d) => M.slotOf(d) === key);
     const cells = [];
-    for (let i = 0; i < need[key]; i++) cells.push(mine[i] ? `<span class="slot on">${esc(mine[i].name)}</span>` : `<span class="slot">${label} ${i + 1}</span>`);
+    for (let i = 0; i < slots[key]; i++) cells.push(mine[i] ? `<span class="slot on">${esc(mine[i].name)}</span>` : `<span class="slot${needDecided ? "" : " wait"}">${label} ${i + 1}</span>`);
     return cells.join("");
   };
   $("#slots").innerHTML = slotHtml("soup", "汁物") + slotHtml("dish", "おかず");
@@ -667,8 +699,9 @@ function renderRequest() {
   $("#reqshare").hidden = !navigator.share;
   const cat = M.catalog(state);
   const names = cat ? [...pick.ids].map((id) => (cat.dishes.find((d) => d.id === id) || {}).name).filter(Boolean) : [];
-  const open = need.soup + need.dish - names.length;
-  $("#pickedsum").textContent = !names.length ? "まだ選んでいません。空いている枠は、おまかせになります。"
+  const open = slots.soup + slots.dish - names.length;
+  $("#pickedsum").textContent = !needDecided ? "まだ仮の枠です。上の「今回ほしい分」で「これで決める」を押すと、ここに料理を当てはめられます。"
+    : !names.length ? "まだ選んでいません。空いている枠は、おまかせになります。"
     : open > 0 ? `${names.length} 品を選びました。空いている ${open} 枠は、おまかせになります。` : "枠がすべて埋まりました。";
   $("#pickclear").hidden = !names.length;
   $("#reqphotos").textContent = photosToday

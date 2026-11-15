@@ -268,3 +268,20 @@ nav.tabs button.on .badge{background:var(--onink);color:var(--on);border-color:v
 .needrow input{font-size:14px;padding-inline:8px;min-width:0}
 .step{display:grid;grid-template-columns:36px minmax(0,1fr) 36px;row-gap:4px;padding:8px 10px}
 .step b{grid-column:1/-1;white-space:nowrap;font-size:13px;color:var(--sub)}
+/* 今回ほしい分（1 回に出す品数 → 作る品の数を自動で出す → 決める） */
+.needbox{display:grid;gap:12px;min-width:0}
+.needrow{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.needrow label{min-width:0}
+.form .needrow input[type=date]{-webkit-appearance:none;appearance:none;display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;font-size:15px;padding:10px 8px;text-align:left;min-height:44px}
+.needrow input[type=date]::-webkit-date-and-time-value{text-align:left;margin:0}
+.mealbox{display:grid;gap:8px;min-width:0}
+.mealhead{margin:0;display:flex;align-items:baseline;gap:8px;font-size:15px}
+.mealhead span{font-size:13px;color:var(--sub);font-weight:600}
+.needauto{display:grid;gap:2px;background:var(--surface);border-radius:14px;padding:12px 14px}
+.needauto span{font-size:12px;font-weight:700;color:var(--sub)}
+.needauto b{font-size:17px}
+.needauto small{font-size:12px;color:var(--sub)}
+.needsum{margin:0;font-size:14px;line-height:1.7;white-space:pre-line}
+.slot.wait{border-style:dotted;opacity:.7}
+.needbox[hidden]{display:none}
+#needs+#fr-login{margin-top:12px}

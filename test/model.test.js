@@ -351,19 +351,36 @@ test("今回ほしい分: 期間・品数・枠が注文に入り、枠を超え
     { id: "v1", name: "ナムル", kind: "作りおき", group: "野菜", print_page: 4 },
   ];
   assert.deepEqual(M.slotCounts(dishes), { soup: 2, dish: 2 });
-  const need = { ...M.NEED_DEFAULT, soup: 1, dish: 2 };
-  assert.equal(M.canPick(dishes, new Set(), "s1", need), true);
-  assert.equal(M.canPick(dishes, new Set(["s1"]), "s2", need), false); // 汁物の枠は 1
-  assert.equal(M.canPick(dishes, new Set(["s1", "m1"]), "v1", need), true);
-  assert.equal(M.canPick(dishes, new Set(["m1", "v1"]), "s1", need), true);
+  const slots = { soup: 1, dish: 2 };
+  assert.equal(M.canPick(dishes, new Set(), "s1", slots), true);
+  assert.equal(M.canPick(dishes, new Set(["s1"]), "s2", slots), false); // 汁物の枠は 1
+  assert.equal(M.canPick(dishes, new Set(["s1", "m1"]), "v1", slots), true);
+  assert.equal(M.canPick(dishes, new Set(["m1", "v1"]), "s1", slots), true);
   assert.equal(M.mondayOf("2026-11-25"), "2026-11-23");
   assert.equal(M.daysBetween("2026-11-23", "2026-11-27"), 5);
-  const r = M.buildRequest(M.emptyState(), [], { need: { ...need, from: "2026-11-25", to: "2026-11-27", breakfast: 0, dinner: 2 } }, new Date(2026, 10, 21));
+  const r = M.buildRequest(M.emptyState(), [], { need: { from: "2026-11-25", to: "2026-11-27", bSoup: 0, bDish: 0, dSoup: 1, dDish: 1 } }, new Date(2026, 10, 21));
   assert.equal(r.data.week_start, "2026-11-23");
   assert.deepEqual(r.data.period, { from: "2026-11-25", to: "2026-11-27", days: 3 });
-  assert.deepEqual(r.data.meals, { breakfast: 0, dinner: 2 });
-  assert.deepEqual(r.data.slots, { soup: 1, dish: 2 });
+  assert.equal(r.data.meals.breakfast, 0);
+  assert.equal(r.data.meals.dinner, 2);
+  assert.deepEqual(r.data.meals.dinner_parts, { soup: 1, dish: 1 });
+  assert.deepEqual(r.data.slots, { soup: 1, dish: 1 });
   assert.ok(r.text.includes("期間: 11/25〜11/27（3 日）"));
-  assert.ok(r.text.includes("1 回に出す品数: 朝 0 品・夜 2 品"));
+  assert.ok(r.text.includes("1 回に出す品数: 夜 2 品（汁物 1・おかず 1）・朝 0 品（なし）"));
   assert.ok(!r.text.includes("1 日の型")); // 基本の型（朝 1・夜 3）から変えたら、型の一文は添えない
+});
+
+test("今回ほしい分: 1 回に出す品数から、この期間に作る品の数が自動で出る", () => {
+  // 基本: 月〜金の 5 日・夜は 汁物 1＋おかず 2・朝は夜の汁物を回す → 汁物 2 品・おかず 4 品
+  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-27" }), { days: 5, soup: 2, dish: 4, breakfast: 1, dinner: 3 });
+  // 3 日なら、同じ品を 3 日続けて出せるので 汁物 1・おかず 2
+  assert.deepEqual(M.needSlots({ from: "2026-11-25", to: "2026-11-27" }), { days: 3, soup: 1, dish: 2, breakfast: 1, dinner: 3 });
+  // 7 日・朝にもおかず 1 品 → 汁物 3・おかず 7
+  assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-29", bDish: 1 }), { days: 7, soup: 3, dish: 7, breakfast: 2, dinner: 3 });
+  // 汁物なし
+  assert.equal(M.needSlots({ from: "2026-11-23", to: "2026-11-27", bSoup: 0, dSoup: 0 }).soup, 0);
+  const r = M.buildRequest(M.emptyState(), [], { need: { from: "2026-11-23", to: "2026-11-27" } }, new Date(2026, 10, 21));
+  assert.deepEqual(r.data.slots, { soup: 2, dish: 4 });
+  assert.ok(r.text.includes("1 回に出す品数: 夜 3 品（汁物 1・おかず 2）・朝 1 品（汁物 1）"));
+  assert.ok(r.text.includes("1 日の型:"));
 });
