@@ -224,3 +224,22 @@ nav.tabs button.on .badge{background:var(--onink);color:var(--on);border-color:v
 .tchip{border:0;background:var(--on);color:var(--onink);font:inherit;font-size:13px;font-weight:800;border-radius:999px;padding:8px 14px;min-height:38px;font-variant-numeric:tabular-nums;box-shadow:var(--shadow)}
 .tchip.end{background:var(--warnbg);color:var(--warn)}
 .row.missing{order:1}
+
+/* ---------- 表紙（開いたときに少しだけ出る）とキャラクター ---------- */
+.cover{position:fixed;inset:0;z-index:20;background:var(--bg);display:grid;place-content:center;justify-items:center;gap:6px;text-align:center;transition:opacity .45s;padding:24px}
+.cover.bye{opacity:0;pointer-events:none}
+.covermascot{width:min(62vw,280px);height:auto;animation:pop .6s cubic-bezier(.2,1.4,.4,1) both,bob 2.4s ease-in-out .6s infinite}
+.covername{margin:10px 0 0;font-size:30px;font-weight:800;letter-spacing:.06em;color:var(--on);animation:rise .5s .25s both}
+.coversub{margin:0;font-size:13px;color:var(--sub);animation:rise .5s .4s both}
+.mark{position:relative;overflow:hidden}
+.mark img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%}
+.mark.face{background:var(--soft)}
+.mark.face span{display:none}
+.mascot{display:block;width:120px;height:auto;margin:0 auto 6px;animation:bob 2.4s ease-in-out infinite}
+.mascot.cheer{animation:cheer .7s ease-in-out 3,bob 2.4s ease-in-out 2.1s infinite}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes rise{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes cheer{0%,100%{transform:rotate(0)}25%{transform:rotate(-7deg)}75%{transform:rotate(7deg)}}
+@media (prefers-reduced-motion:reduce){.covermascot,.covername,.coversub,.mascot,.mascot.cheer{animation:none}}
+.prog .mascot{width:60px;margin:-10px 0 -6px auto}

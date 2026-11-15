@@ -1,6 +1,6 @@
 {
-  "name": "今週の作り置き",
-  "short_name": "作り置き",
+  "name": "日曜につくりおき",
+  "short_name": "日曜につくりおき",
   "lang": "ja",
   "start_url": "./index.html",
   "scope": "./",

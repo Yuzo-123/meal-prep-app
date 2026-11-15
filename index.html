@@ -6,18 +6,23 @@
 <meta name="theme-color" content="#fbf6ee" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1c1612" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="作り置き">
+<meta name="apple-mobile-web-app-title" content="日曜につくりおき">
 <meta name="robots" content="noindex">
-<title>今週の作り置き</title>
+<title>日曜につくりおき</title>
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="src/css/styles.css">
 </head>
 <body>
+<div class="cover" id="cover" hidden>
+  <img class="covermascot" src="icons/mascot.png" alt="" onerror="this.remove()">
+  <p class="covername">日曜につくりおき</p>
+  <p class="coversub">日曜にまとめて作って、平日をらくに</p>
+</div>
 <div class="wrap">
   <header>
-    <div class="mark">作</div>
-    <div class="grow"><h1>今週の作り置き</h1><p id="headline"></p></div>
+    <div class="mark"><span>作</span><img src="icons/mascot.png" alt="" onload="this.parentNode.classList.add('face')" onerror="this.remove()"></div>
+    <div class="grow"><h1>日曜につくりおき</h1><p id="headline"></p></div>
     <button class="gear" data-go="set" aria-label="設定">設定</button>
   </header>
 

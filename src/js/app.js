@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.9.1"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.10.2"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -384,6 +384,7 @@ function refreshChecks() {
     : buy.missing ? `品目 残りなし（無かった ${buy.missing} 品目は「メモ」に出ます）` : "品目 すべてかごに入りました";
   $("#shopbar").style.width = buy.ratio * 100 + "%";
   $("#tshop").textContent = buy.left ? buy.left : "✓";
+  cheer($("#v-shop .prog"), buy.left === 0);
   // 買い物: 店に無かった印
   $$("#shoplist .nonebtn").forEach((b) => {
     const none = M.isDone(state, wk, b.dataset.none);
@@ -441,6 +442,7 @@ function refreshChecks() {
   $("#cooktext").textContent = cook.left ? `品 残り（全 ${cook.total}）` : "品 すべて作りました";
   $("#cookbar").style.width = cook.ratio * 100 + "%";
   $("#tcook").textContent = cook.left ? cook.left : "✓";
+  cheer($("#v-cook .prog"), cook.left === 0);
 }
 
 // ---------- メモと記録 ----------
@@ -653,7 +655,41 @@ function renderAll() {
   refreshChecks();
 }
 
+// ---------- キャラクターと表紙 ----------
+const MASCOT = "icons/mascot.png"; // 絵が無いあいだは、絵の所だけ出さない
+
+function mascotImg(cls) {
+  const img = document.createElement("img");
+  img.className = cls;
+  img.alt = "";
+  img.src = MASCOT;
+  img.onerror = () => img.remove();
+  return img;
+}
+
+// 全部済んだときに、数字の横でキャラクターが喜ぶ
+function cheer(box, on) {
+  let img = $(".mascot", box);
+  if (on && !img) box.appendChild(mascotImg("mascot cheer"));
+  if (!on && img) img.remove();
+}
+
+// 開いたときに、キャラクターとアプリ名の表紙を少しだけ出す（押すとすぐ消える。開き直しのたびには出さない）
+function showCover() {
+  const c = $("#cover");
+  try {
+    if (sessionStorage.getItem("mealprep-cover")) return;
+    sessionStorage.setItem("mealprep-cover", "1");
+  } catch (e) { /* 覚えられなくても、表紙は出す */ }
+  c.hidden = false;
+  const bye = () => { c.classList.add("bye"); setTimeout(() => { c.hidden = true; }, 500); };
+  c.addEventListener("click", bye);
+  setTimeout(bye, 1900);
+}
+
 function init() {
+  showCover();
+  $$(".blank").forEach((b) => b.prepend(mascotImg("mascot")));
   $$("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $$("[data-reset]").forEach((b) => b.addEventListener("click", () => {
     const w = M.currentWeek(state);
