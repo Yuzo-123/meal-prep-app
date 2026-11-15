@@ -285,3 +285,9 @@ nav.tabs button.on .badge{background:var(--onink);color:var(--on);border-color:v
 .slot.wait{border-style:dotted;opacity:.7}
 .needbox[hidden]{display:none}
 #needs+#fr-login{margin-top:12px}
+/* 献立タブの先頭の、週の切り替え */
+.weekbar{display:flex;align-items:center;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -16px 8px;padding:2px 16px}
+.weekbar::-webkit-scrollbar{display:none}
+.weekbar[hidden]{display:none}
+.weekbar span{flex:none;font-size:12px;font-weight:700;color:var(--sub)}
+.weekbar .pill{font-size:13px;padding:7px 14px;min-height:36px}

@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.12"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.13"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -483,7 +483,20 @@ function renderSettings() {
   const weeks = Object.keys(h.weeks).sort().reverse();
   $("#weeksel").innerHTML = weeks.map((k) => `<option value="${k}"${k === h.current ? " selected" : ""}>${M.weekSpan(k)} の週</option>`).join("");
   $("#weekbox").hidden = weeks.length < 2;
+  // 献立タブの先頭にも、週の切り替えを出す（持っている週が 2 つ以上のとき。新しい 3 週まで）
+  const bar = $("#weekbar");
+  bar.hidden = weeks.length < 2;
+  bar.innerHTML = `<span>週</span>` + weeks.slice(0, 3).reverse().map((k) => `<button type="button" class="pill${k === h.current ? " on" : ""}" data-week="${k}">${esc(M.weekSpan(k))}</button>`).join("");
   $("#version").textContent = APP_VERSION;
+}
+
+// 表示する週を切り替える。チェックの印は週ごとに別々に残る。
+function switchWeek(k) {
+  if (!M.home(state).weeks[k] || M.home(state).current === k) return;
+  const next = structuredClone(state);
+  M.home(next).current = k;
+  commit(next);
+  renderAll();
 }
 
 function takeIn(text) {
@@ -717,9 +730,14 @@ function renderRequest() {
   if (lastRequest) {
     const when = new Date(lastRequest.created_at);
     const at = `${when.getMonth() + 1}/${when.getDate()} ${when.getHours()}:${String(when.getMinutes()).padStart(2, "0")}`;
-    const label = { new: "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります", working: "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました。献立タブを見てください",
+    const h = M.home(state);
+    const arrived = lastRequest.status === "done" && h.weeks[lastRequest.week_start];
+    const see = !arrived ? "" : h.current === lastRequest.week_start
+      ? `<p class="hint">いま、この週を表示しています。</p>`
+      : `<div class="formfoot"><button type="button" class="btn" data-seeweek="${esc(lastRequest.week_start)}">この週を見る</button><span>いまは ${esc(M.weekSpan(h.current))} の週を表示中</span></div>`;
+    const label = { new: "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります", working: "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
       failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
-    box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>`;
+    box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>${see}`;
   }
 }
 
@@ -904,11 +922,17 @@ function init() {
   });
   $("#pastego").addEventListener("click", () => takeIn($("#paste").value));
   $("#export").addEventListener("click", download);
-  $("#weeksel").addEventListener("change", (e) => {
-    const next = structuredClone(state);
-    M.home(next).current = e.target.value;
-    commit(next);
-    renderAll();
+  $("#weeksel").addEventListener("change", (e) => switchWeek(e.target.value));
+  $("#weekbar").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-week]");
+    if (b) switchWeek(b.dataset.week);
+  });
+  $("#reqstatus").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-seeweek]");
+    if (!b) return;
+    switchWeek(b.dataset.seeweek);
+    showTab("menu");
+    window.scrollTo(0, 0);
   });
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
   $("#door-pick").addEventListener("click", () => { $("#pickbox").hidden = false; renderPlan(); $("#pickbox").scrollIntoView({ block: "start", behavior: "smooth" }); });
