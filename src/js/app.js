@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.7.1"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.7.2"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -550,6 +550,13 @@ function init() {
   });
   $("#logout").addEventListener("click", async () => { await C.signOut(); cloudUser = null; pref("household", ""); refreshFridge(); });
   refreshFridge();
+  // 閉じずに置いておいたアプリに戻ってきたときにも、新しい献立を受け取る（1 分に 1 回まで）
+  let lastSeen = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || Date.now() - lastSeen < 60000) return;
+    lastSeen = Date.now();
+    refreshFridge();
+  });
   renderAll();
   showTab(M.currentWeek(state) ? pref("tab") || "menu" : "set");
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
