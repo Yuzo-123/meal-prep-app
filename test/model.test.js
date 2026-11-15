@@ -336,3 +336,9 @@ test("買い物を料理で絞る一覧は、出てくる順に料理名と品�
   for (const r of M.shoppingRows(w).filter((x) => !x.pantry)) for (const d of r.dishes) assert.ok(names.includes(d));
   assert.equal(M.shopDishes(w).reduce((n, d) => n + d.count, 0), M.shoppingRows(w).reduce((n, r) => n + (r.dishes || []).length, 0));
 });
+
+test("注文には、1 日の型（夜 3 品・朝は汁物を回す）が必ず入る", () => {
+  const r = M.buildRequest(M.emptyState(), [], {}, new Date(2026, 10, 21));
+  assert.ok(r.text.includes("1 日の型: 夜は 汁物・主菜（肉か魚）・副菜 の 3 品"));
+  assert.deepEqual(r.data.day_shape.dinner, ["汁物", "主菜（肉か魚）", "副菜"]);
+});

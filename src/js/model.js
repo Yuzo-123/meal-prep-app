@@ -155,6 +155,12 @@ export function nextPlanWeek(state, now = new Date()) {
 }
 
 // lio に渡す注文。チャットに貼れる文と、機械が読める中身の両方を作る。
+// 1 日の献立の型（2026-11-15 に家で決めた。5 品は多いので 3 品に）。注文に必ず添える。
+export const DAY_SHAPE = {
+  dinner: ["汁物", "主菜（肉か魚）", "副菜"], breakfast: "夜と同じ汁物を回す（朝のための品は足さない）",
+  text: "夜は 汁物・主菜（肉か魚）・副菜 の 3 品。朝は夜と同じ汁物を回す",
+};
+
 export function buildRequest(state, picks, opts = {}, now = new Date()) {
   const cat = catalog(state);
   const byId = new Map((cat ? cat.dishes : []).map((d) => [d.id, d]));
@@ -163,6 +169,7 @@ export function buildRequest(state, picks, opts = {}, now = new Date()) {
   const data = {
     format: "mealprep-request", version: 1, household: state.household, week_start: week,
     picks: chosen.map((d) => d.id), fill_rest: opts.fillRest !== false, kid_ok_only: !!opts.kidOk, note: (opts.note || "").trim(),
+    day_shape: DAY_SHAPE,
   };
   const lines = [
     `【献立の注文】${weekSpan(week)} の週`,
@@ -170,6 +177,7 @@ export function buildRequest(state, picks, opts = {}, now = new Date()) {
     ...chosen.map((d) => `・${d.name}（${d.id}・P.${d.print_page}・${d.kind}）`),
     `足りない分: ${data.fill_rest ? "おまかせ" : "足さない"}`,
     `取り分け注意の品: ${data.kid_ok_only ? "除く" : "入れてよい"}`,
+    `1 日の型: ${DAY_SHAPE.text}`,
   ];
   if (data.note) lines.push(`ひとこと: ${data.note}`);
   return { data, text: lines.join("\n") };

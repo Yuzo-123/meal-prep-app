@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.3"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.4"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
