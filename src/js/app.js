@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.11"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.12"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -543,6 +543,7 @@ const need = (() => {
   return n;
 })();
 let needDecided = false; // 「これで決める」を押すまでは、枠ができない
+let needAuto = true;     // 期間を手で変えるまでは、次の週（月〜金）に合わせ続ける
 
 function pickedDishes() {
   const cat = M.catalog(state);
@@ -553,7 +554,8 @@ const mdText = (isoDate) => { const [, m, d] = isoDate.split("-").map(Number); r
 const partText = (s, d) => [s ? `汁物 ${s}` : "", d ? `おかず ${d}` : ""].filter(Boolean).join("・");
 
 function renderNeeds() {
-  if (!need.from) { need.from = M.nextPlanWeek(state); need.to = M.addDays(need.from, 4); }
+  // 週のデータがあとから届くと「次の週」が変わる。手で変えておらず、まだ決めていなければ、置き直す。
+  if (!need.from || (needAuto && !needDecided && need.from !== M.nextPlanWeek(state))) { need.from = M.nextPlanWeek(state); need.to = M.addDays(need.from, 4); }
   const slots = M.needSlots(need);
   $("#need-edit").hidden = needDecided;
   $("#need-done").hidden = !needDecided;
@@ -577,13 +579,14 @@ function bindNeeds() {
   const changed = () => { renderNeeds(); renderRequest(); };
   $("#need-from").addEventListener("change", (e) => {
     if (!e.target.value) return renderNeeds();
+    needAuto = false;
     const span = M.daysBetween(need.from, need.to);
     need.from = e.target.value;
     need.to = M.addDays(need.from, Math.max(0, span - 1));
     changed();
   });
   $("#need-to").addEventListener("change", (e) => {
-    if (e.target.value && e.target.value >= need.from) need.to = e.target.value;
+    if (e.target.value && e.target.value >= need.from) { need.to = e.target.value; needAuto = false; }
     changed();
   });
   $$("#needs .step button").forEach((b) => b.addEventListener("click", () => {
@@ -714,7 +717,7 @@ function renderRequest() {
   if (lastRequest) {
     const when = new Date(lastRequest.created_at);
     const at = `${when.getMonth() + 1}/${when.getDate()} ${when.getHours()}:${String(when.getMinutes()).padStart(2, "0")}`;
-    const label = { new: "頼みました。組み始めるのを待っています", working: "いま組んでいます", done: "届きました。献立タブを見てください",
+    const label = { new: "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります", working: "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました。献立タブを見てください",
       failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
     box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>`;
   }
@@ -741,7 +744,9 @@ async function sendRequest() {
     $("#picknote").value = "";
     pick.ids.clear();
     if (!$("#pickbox").hidden) renderPlan(); else renderRequest();
-    toast("献立を頼みました。できあがると、ここに届きます");
+    needDecided = false; needAuto = true;
+    renderRequest();
+    toast("献立を頼みました。これから組むので、すぐには変わりません");
     window.scrollTo(0, 0);
   } catch (e) {
     $("#reqmsg").textContent = e.message;
