@@ -1,8 +1,9 @@
 // 画面。計算は model.js、保存は store.js。
 import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
+import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.3.0"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.5.0"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -37,24 +38,34 @@ function showTab(name) {
 // ---------- 献立 ----------
 let dayFilter = "all";
 
-function dishCard(d, w) {
+// 献立のカード。押すと「食べた」の印が付く。作りおきは、日曜に作り終えたら「〇曜まで」が出る。
+function dishCard(d, w, day, meal) {
   const src = M.photoOf(w, d.id);
   const pic = src ? `<img class="pic" src="${esc(src)}" alt="" loading="lazy">` : "";
-  return dishCardBody(d).replace('<article class="card">', `<article class="card${src ? " haspic" : ""}">${pic}`);
-}
-
-function dishCardBody(d) {
-  if (d.home) {
-    return `<article class="card"><div class="tag home"><i></i>家にある</div><h4>${esc(d.name)}</h4></article>`;
-  }
   const prep = d.kind === "作りおき";
-  const tag = prep ? "作りおき" : d.time_min ? `当日 ${esc(d.time_min)} 分` : "当日";
-  const meta = [
+  const until = prep ? M.keepUntil(w.week_start, d.fridge, d.fridge_days) : null;
+  const tag = d.home ? "家にある" : prep ? "作りおき" : d.time_min ? `当日 ${esc(d.time_min)} 分` : "当日";
+  const meta = d.home ? "" : [
     d.print_page != null ? `<span class="pg">P.${esc(d.print_page)}</span>` : "",
-    prep && d.fridge ? `<span>冷蔵 ${esc(d.fridge)}</span>` : "",
+    prep && d.fridge ? `<span class="keepfor">冷蔵 ${esc(d.fridge)}</span>` : "",
+    until ? `<span class="until" hidden>${esc(until.day)}曜まで</span>` : "",
     d.kid_caution ? `<span class="kid">取り分け注意</span>` : "",
   ].join("");
-  return `<article class="card"><div class="tag ${prep ? "prep" : "quick"}"><i></i>${tag}</div><h4>${esc(d.name)}</h4><div class="meta">${meta}</div></article>`;
+  return `<article class="card${src ? " haspic" : ""}" role="button" tabindex="0" data-eat="${esc(M.eatKey(day, meal, d.id))}" data-cook="${esc("cook:" + d.id)}">${pic}
+    <div class="tag ${d.home ? "home" : prep ? "prep" : "quick"}"><i></i>${tag}<span class="eaten">食べた</span></div><h4>${esc(d.name)}</h4><div class="meta">${meta}</div></article>`;
+}
+
+function updateMenuMarks(wk) {
+  $$("#panels .card").forEach((c) => {
+    c.classList.toggle("ate", M.isDone(state, wk, c.dataset.eat));
+    const made = M.isDone(state, wk, c.dataset.cook);
+    const until = $(".until", c);
+    if (until) {
+      until.hidden = !made;
+      const keep = $(".keepfor", c);
+      if (keep) keep.hidden = made;
+    }
+  });
 }
 
 function renderMenu(w) {
@@ -65,9 +76,18 @@ function renderMenu(w) {
   $("#panels").innerHTML = dates.map((d) => {
     const meals = (w.days || {})[d.day] || {};
     const body = M.MEALS.map((m) =>
-      `<div class="mealhead">${m}</div><div class="grid">${(meals[m] || []).map((d) => dishCard(d, w)).join("")}</div>`).join("");
+      `<div class="mealhead">${m}</div><div class="grid">${(meals[m] || []).map((x) => dishCard(x, w, d.day, m)).join("")}</div>`).join("");
     return `<section class="day" data-day="${d.day}"><h3>${d.day}曜 <small>${d.month}/${d.date}</small></h3>${body}</section>`;
   }).join("");
+  $$("#panels .card").forEach((c) => {
+    const flip = () => {
+      const wk = M.home(state).current;
+      commit(M.toggleCheck(state, wk, c.dataset.eat, !M.isDone(state, wk, c.dataset.eat)));
+      updateMenuMarks(wk);
+    };
+    c.addEventListener("click", flip);
+    c.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+  });
   $$("#daypills .pill").forEach((p) => p.addEventListener("click", () => setDay(p.dataset.day)));
   setDay(M.todayDay(w.week_start) || pref("day") || "all");
 }
@@ -97,7 +117,16 @@ function renderShop(w) {
     `<button class="pill" data-aisle="all">すべて</button>` +
     aisles.map((a) => `<button class="pill" data-aisle="${esc(a)}">${esc(M.AISLE_SHORT[a])}</button>`).join("") +
     `<button class="pill" data-aisle="pantry">調味料</button>`;
-  $("#shoplist").innerHTML = rows.map((r) => rowHtml(r, r.amount ? `<span class="amt">${esc(r.amount)}</span>` : "")).join("");
+  $("#shoplist").innerHTML = rows.map((r) => rowHtml(r,
+    (r.amount ? `<span class="amt">${esc(r.amount)}</span>` : "") +
+    (r.pantry ? "" : `<button type="button" class="nonebtn" data-none="${esc(M.noneKey(r.name))}">無かった</button>`))).join("");
+  $$("#shoplist .nonebtn").forEach((b) => b.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const wk = M.home(state).current;
+    commit(M.toggleCheck(state, wk, b.dataset.none, !M.isDone(state, wk, b.dataset.none)));
+    refreshChecks();
+  }));
   $("#skiplist").innerHTML = (w.shopping.skip || []).map((s) => `<li><b>${esc(s.name)}</b><span>${esc(s.where || "")}</span></li>`).join("") || "<li><span>なし</span></li>";
   $$("#shoppills .pill").forEach((p) => p.addEventListener("click", () => { aisle = p.dataset.aisle; refreshChecks(); }));
 }
@@ -106,11 +135,33 @@ function checkRow(key, cls, body, right = "") {
   return `<label class="row ${cls}" data-key="${esc(key)}"><input type="checkbox"><span class="box"></span><span class="body">${body}</span>${right}</label>`;
 }
 
+let stepPlace = "all"; // レシピの絞り込み: 場所
+let stepDish = null;   // レシピの絞り込み: 料理（作る品の「手順を見る」から）
+
 function renderCook(w) {
-  $("#cooklist").innerHTML = M.cookRows(w).map((r) => rowHtml(r, r.page != null ? `<span class="amt pg">P.${esc(r.page)}</span>` : "")).join("");
   const s = M.sundayPlan(w);
+  const places = M.places(s.steps);
+  const hasSteps = (id) => s.steps.some((x) => x.dish === id);
+  $("#cooklist").innerHTML = M.cookRows(w).map((r) => {
+    const id = r.key.slice(5);
+    return rowHtml(r, (r.page != null ? `<span class="amt pg">P.${esc(r.page)}</span>` : "") +
+      (hasSteps(id) ? `<button type="button" class="nonebtn" data-steps="${esc(id)}">手順を見る</button>` : ""));
+  }).join("");
+  $$("#cooklist [data-steps]").forEach((b) => b.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    stepDish = b.dataset.steps;
+    stepPlace = "all";
+    setSun("steps");
+    refreshChecks();
+  }));
   $("#assume").textContent = s.assume;
-  $("#steplist").innerHTML = s.steps.map((x) => checkRow(x.key, "step",
+  $("#placepills").innerHTML = `<button class="pill" data-place="all">すべて</button>` +
+    places.map((p, i) => `<button class="pill pl${i % 6}" data-place="${esc(p)}"><i class="dot"></i>${esc(p)}</button>`).join("") +
+    `<button class="pill clear" id="dishclear" hidden></button>`;
+  $$("#placepills [data-place]").forEach((p) => p.addEventListener("click", () => { stepPlace = p.dataset.place; refreshChecks(); }));
+  $("#dishclear").addEventListener("click", () => { stepDish = null; refreshChecks(); });
+  $("#steplist").innerHTML = s.steps.map((x) => checkRow(x.key, `step pl${places.indexOf(x.where) % 6}" data-place="${esc(x.where)}" data-dish="${esc(x.dish || "")}`,
     `<span class="when"><i>${esc(x.at)}</i>${esc(x.where)}</span><b>${esc(x.title)} ${x.page != null ? `<span class="pg">P.${esc(x.page)}</span>` : ""}</b><small class="wr">${esc(x.text)}</small>`)).join("");
   $("#matlist").innerHTML = s.materials.map((x) => checkRow(x.key, "",
     `<b>${esc(x.name)}</b><small>${esc(x.sub)}</small>`, `<span class="amt">${esc(x.amount)}</span>`)).join("");
@@ -119,7 +170,7 @@ function renderCook(w) {
   $("#cutlist").innerHTML = s.cut.map((x) => checkRow(x.key, "",
     `<b>${esc(x.name)}</b><small class="wr">${esc(x.how)}</small>`, `<span class="amt for">${esc(x.for)}</span>`)).join("");
   $$("#sunpills .pill").forEach((p) => { p.onclick = () => setSun(p.dataset.sun); });
-  setSun(s.has ? pref("sun") || "steps" : "dish");
+  setSun(s.has ? pref("sun") || "dish" : "dish");
 }
 
 function setSun(name) {
@@ -165,6 +216,40 @@ function refreshChecks() {
   $("#shoptext").textContent = buy.left ? `品目 残り（全 ${buy.total}）` : "品目 すべてかごに入りました";
   $("#shopbar").style.width = buy.ratio * 100 + "%";
   $("#tshop").textContent = buy.left ? `残り ${buy.left}` : "完了";
+  // 買い物: 店に無かった印
+  $$("#shoplist .nonebtn").forEach((b) => {
+    const none = M.isDone(state, wk, b.dataset.none);
+    b.closest(".row").classList.toggle("missing", none);
+    b.textContent = none ? "無かった ✓" : "無かった";
+  });
+  const missing = M.missingItems(state, wk, w);
+  $("#missingbox").hidden = !missing.length;
+  $("#missing").innerHTML = missing.map((n) => `<li>${esc(n)}</li>`).join("");
+  // 献立: 食べた・〇曜まで
+  updateMenuMarks(wk);
+  // 日曜のレシピ: いまやること・絞り込み
+  const s = M.sundayPlan(w);
+  const now = M.currentStep(state, wk, s.steps);
+  const left = s.steps.filter((x) => !M.isDone(state, wk, x.key)).length;
+  $("#nowbox").hidden = !s.has;
+  $("#nowbox").classList.toggle("alldone", s.has && !now);
+  $("#nowhead").textContent = now ? `いま ${now.at} の工程・残り ${left} 手順` : "手順は全部終わりました";
+  $("#nowbody").innerHTML = now
+    ? `<span class="when"><i>${esc(now.at)}</i>${esc(now.where)}</span><b>${esc(now.title)} ${now.page != null ? `<span class="pg">P.${esc(now.page)}</span>` : ""}</b><p>${esc(now.text)}</p>`
+    : "";
+  $("#nowdone").hidden = !now;
+  $("#nowdone").dataset.key = now ? now.key : "";
+  $$("#placepills [data-place]").forEach((p) => p.classList.toggle("on", p.dataset.place === stepPlace));
+  const clear = $("#dishclear");
+  if (clear) {
+    const dish = stepDish ? M.cookRows(w).find((r) => r.key === "cook:" + stepDish) : null;
+    clear.hidden = !dish;
+    clear.textContent = dish ? `${dish.name} だけ ×` : "";
+  }
+  $$("#steplist .row").forEach((row) => {
+    row.hidden = !((stepPlace === "all" || row.dataset.place === stepPlace) && (!stepDish || row.dataset.dish === stepDish));
+    row.classList.toggle("current", !!now && row.dataset.key === now.key);
+  });
   // 日曜
   const cook = M.progress(state, wk, M.cookRows(w));
   $("#cookleft").textContent = cook.left;
@@ -236,6 +321,67 @@ function download() {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+// ---------- 冷蔵庫（ログインと写真の送信） ----------
+let cloudUser = null; // { session, household }
+
+async function refreshFridge() {
+  let session = null;
+  try { session = await C.ensureSession(); } catch (e) { session = C.getSession(); } // 電波なしでも、ログイン済みの見た目は保つ
+  if (!session) cloudUser = null;
+  else if (!cloudUser || cloudUser.session.user_id !== session.user_id) cloudUser = { session, household: pref("household") || null };
+  else cloudUser.session = session;
+  $("#fr-login").hidden = !!cloudUser;
+  $("#fr-main").hidden = !cloudUser;
+  if (!cloudUser) return;
+  try {
+    if (!cloudUser.household) cloudUser.household = pref("household", await C.myHousehold(session));
+    const n = await C.countToday(session, cloudUser.household);
+    $("#fr-count").textContent = n ? `今日は ${n} 枚送っています` : "今日はまだ送っていません";
+    $("#tfridge").textContent = n ? `${n} 枚` : "写真";
+  } catch (e) {
+    $("#fr-count").textContent = e.message;
+  }
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const btn = $("#loginbtn");
+  btn.disabled = true;
+  $("#loginmsg").textContent = "";
+  try {
+    await C.signIn($("#login-email").value.trim(), $("#login-pass").value);
+    $("#login-pass").value = "";
+    await refreshFridge();
+    toast("ログインしました");
+  } catch (err) {
+    $("#loginmsg").textContent = err.message;
+  }
+  btn.disabled = false;
+}
+
+async function sendPhotos(files) {
+  for (const f of files) {
+    const box = document.createElement("div");
+    box.className = "shot busy";
+    box.innerHTML = `<img alt=""><span>送信中</span>`;
+    $("img", box).src = URL.createObjectURL(f);
+    $("#shots").prepend(box);
+    try {
+      const session = await C.ensureSession();
+      if (!session) { await refreshFridge(); toast("ログインし直してください"); box.remove(); return; }
+      const blob = await C.shrink(f);
+      await C.uploadPhoto(session, cloudUser.household, blob);
+      box.className = "shot";
+      $("span", box).textContent = "送信済み";
+    } catch (err) {
+      box.className = "shot fail";
+      $("span", box).textContent = "送れませんでした";
+      toast(err.message);
+    }
+  }
+  refreshFridge();
+}
+
 // ---------- 全体 ----------
 function renderAll() {
   const w = M.currentWeek(state);
@@ -279,6 +425,21 @@ function init() {
     renderAll();
   });
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
+  $("#nowdone").addEventListener("click", (e) => {
+    const key = e.currentTarget.dataset.key;
+    const w = M.currentWeek(state);
+    if (!key || !w) return;
+    commit(M.toggleCheck(state, w.week_start, key, true));
+    refreshChecks();
+  });
+  $("#loginform").addEventListener("submit", doLogin);
+  $("#photo").addEventListener("change", (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length) sendPhotos(files);
+  });
+  $("#logout").addEventListener("click", async () => { await C.signOut(); cloudUser = null; pref("household", ""); refreshFridge(); });
+  refreshFridge();
   renderAll();
   showTab(M.currentWeek(state) ? pref("tab") || "menu" : "set");
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {

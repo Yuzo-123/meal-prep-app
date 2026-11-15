@@ -1,9 +1,9 @@
 // 電波なしでも開くための仕掛け。画面のファイルを端末に覚えさせる。
 // 画面を直したら、下の番号と src/js/app.js の APP_VERSION を一緒に上げる（上げないと古い画面が出続ける）。
-const CACHE = "mealprep-0.3.0";
+const CACHE = "mealprep-0.5.0";
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./src/css/styles.css",
-  "./src/js/app.js", "./src/js/model.js", "./src/js/store.js",
+  "./src/js/app.js", "./src/js/model.js", "./src/js/store.js", "./src/js/cloud.js",
   "./icons/icon-192.png", "./icons/icon-512.png",
 ];
 self.addEventListener("install", (e) => {
@@ -20,6 +20,7 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  if (new URL(e.request.url).origin !== self.location.origin) return; // サーバー側とのやりとりには手を出さない
   e.respondWith(
     caches.match(e.request).then((r) => r || fetch(e.request).catch(() => caches.match("./index.html")))
   );

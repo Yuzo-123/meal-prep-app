@@ -17,7 +17,8 @@
 <div class="wrap">
   <header>
     <div class="mark">作</div>
-    <div><h1>今週の作り置き</h1><p id="headline"></p></div>
+    <div class="grow"><h1>今週の作り置き</h1><p id="headline"></p></div>
+    <button class="gear" data-go="set" aria-label="設定">設定</button>
   </header>
 
   <section class="view" id="v-menu">
@@ -36,7 +37,7 @@
       <div class="list" id="shoplist"></div>
       <p class="empty" id="shopempty" hidden>この売り場は全部かごに入りました</p>
       <details><summary>買わなくてよいもの</summary><ul id="skiplist"></ul></details>
-      <button class="reset" data-reset="buy,pantry">買い物のチェックを外す</button>
+      <button class="reset" data-reset="buy,pantry,none">買い物のチェックを外す</button>
     </div>
     <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
   </section>
@@ -46,12 +47,18 @@
       <div class="prog"><b id="cookleft">0</b><span id="cooktext">品</span></div>
       <div class="bar"><i id="cookbar"></i></div>
       <div class="pills" id="sunpills">
-        <button class="pill" data-sun="steps">手順</button>
+        <button class="pill" data-sun="dish">作る品</button>
         <button class="pill" data-sun="mat">材料</button>
         <button class="pill" data-sun="prep">下準備</button>
-        <button class="pill" data-sun="dish">作る品</button>
+        <button class="pill" data-sun="steps">レシピ</button>
       </div>
       <div class="sun" data-sun="steps">
+        <div class="now" id="nowbox" hidden>
+          <div class="nowhead" id="nowhead"></div>
+          <div class="nowbody" id="nowbody"></div>
+          <button class="btn" id="nowdone" type="button">できた。次へ</button>
+        </div>
+        <div class="pills" id="placepills"></div>
         <p class="hint" id="assume"></p>
         <div class="list keep" id="steplist"></div>
       </div>
@@ -80,6 +87,10 @@
     <div class="needweek">
       <h2>気をつけること</h2>
       <ul class="notes" id="notes"></ul>
+      <div id="missingbox" hidden>
+        <h2>店に無かったもの</h2>
+        <ul class="notes" id="missing"></ul>
+      </div>
       <h2>今週の記録</h2>
       <div class="form">
         <label>日曜の調理にかかった時間（分）<input id="log-min" inputmode="numeric" placeholder="例 210"></label>
@@ -89,6 +100,28 @@
       </div>
     </div>
     <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+  </section>
+
+  <section class="view" id="v-fridge">
+    <div id="fr-login">
+      <h2>ログイン</h2>
+      <form class="form" id="loginform">
+        <p class="hint">冷蔵庫の写真を送るには、家族のログインが要ります。最初の 1 回だけです。</p>
+        <label>メールアドレス<input id="login-email" type="email" autocomplete="username" inputmode="email" required></label>
+        <label>パスワード<input id="login-pass" type="password" autocomplete="current-password" required></label>
+        <div class="formfoot"><button class="btn" id="loginbtn" type="submit">ログインする</button><span id="loginmsg"></span></div>
+      </form>
+    </div>
+    <div id="fr-main" hidden>
+      <h2>冷蔵庫の写真を送る</h2>
+      <div class="form">
+        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送った写真は、献立ができたら消します。</p>
+        <label class="btn filebtn">撮る・写真を選ぶ<input type="file" id="photo" accept="image/*" multiple></label>
+        <p class="hint" id="fr-count"></p>
+      </div>
+      <div class="shots" id="shots"></div>
+      <button class="reset" id="logout">ログアウトする</button>
+    </div>
   </section>
 
   <section class="view" id="v-set">
@@ -120,8 +153,8 @@
   <button data-tab="menu">献立<small>月〜金</small></button>
   <button data-tab="shop">買い物<small id="tshop">—</small></button>
   <button data-tab="cook">日曜<small id="tcook">—</small></button>
+  <button data-tab="fridge">冷蔵庫<small id="tfridge">写真</small></button>
   <button data-tab="note">メモ<small id="tnote">—</small></button>
-  <button data-tab="set">設定<small>取り込み</small></button>
 </div></nav>
 
 <script type="module" src="src/js/app.js"></script>

@@ -112,6 +112,12 @@ export function cookRows(bundle) {
   }));
 }
 
+// 古い取り込みファイルには手順に品の番号が無いので、料理名から引く
+function dishIdByName(bundle, name) {
+  const hit = (bundle.cook_sunday || []).find((c) => c.name === name);
+  return hit ? hit.id : null;
+}
+
 // 日曜の段取り（手順・材料・下準備）。週のデータに入っていなければ空で返す。
 export function sundayPlan(bundle) {
   const s = (bundle && bundle.sunday) || {};
@@ -122,12 +128,49 @@ export function sundayPlan(bundle) {
     steps: (s.steps || []).map((x) => ({
       key: `step:${x.at}|${x.title || x.name || ""}`, at: x.at || "", where: x.where || "",
       title: x.title || x.name || "", page: x.print_page ?? null, text: x.do || "",
+      dish: x.id || dishIdByName(bundle, x.title || x.name), // どの料理の手順か（料理をまたぐ手順は null）
     })),
     materials: (mat.items || []).map((x) => ({ key: "mat:" + x.name, name: x.name, amount: x.amount || "", sub: (x.for || []).join("・") })),
     pantry: mat.pantry || [],
     before: (s.before || []).map((t) => ({ key: "before:" + t, text: t })),
     cut: (s.cut || []).map((c) => ({ key: "cut:" + c.what, name: c.what, how: c.how || "", for: c.for || "" })),
   };
+}
+
+// レシピで使う場所の一覧（出てきた順）。色分けと絞り込みに使う。
+export function places(steps) {
+  return [...new Set(steps.map((x) => x.where).filter(Boolean))];
+}
+
+// いまやること＝まだ済んでいない最初の手順。全部済んでいれば null。
+export function currentStep(state, week, steps) {
+  return steps.find((x) => !isDone(state, week, x.key)) || null;
+}
+
+// 日曜に作った作りおきを、何曜まで食べられるか。「3〜4日」なら長いほうの 4 日＝木曜まで。
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+export function keepUntil(weekStart, fridgeText, fridgeDays) {
+  const text = String(fridgeText || "");
+  const nums = text.match(/\d+/g);
+  if (!fridgeDays && !nums) return null;
+  // 本の索引が日数を持っていればそれを使う。無ければ文字から読む（「1週間」は 7 日）
+  const days = fridgeDays || Math.max(...nums.map(Number)) * (text.includes("週") ? 7 : 1);
+  const [y, m, d] = weekStart.split("-").map(Number);
+  const dt = new Date(y, m - 1, d - 1 + days); // 週の開始（月曜）の前の日曜から数える
+  return { day: WEEKDAYS[dt.getDay()], days };
+}
+
+// 印の鍵。「食べた」は曜日・朝夜・品ごと、「店に無かった」は品名ごと。
+export function eatKey(day, meal, id) {
+  return `eat:${day}|${meal}|${id}`;
+}
+
+export function noneKey(name) {
+  return "none:" + name;
+}
+
+export function missingItems(state, week, bundle) {
+  return bundle.shopping.buy.map((it) => it.name).filter((n) => isDone(state, week, noneKey(n)));
 }
 
 export function isDone(state, week, key) {

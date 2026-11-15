@@ -1,0 +1,59 @@
+#!/usr/bin/python3
+"""Supabase の「誰が読めるか」の決まりが効いているかを、ログインしていない立場で実際に試す。
+
+使い方: /usr/bin/python3 projects/meal-prep-app/tools/check_rules.py
+使うのは公開してよい鍵だけ（アプリのファイルに書くものと同じ）。管理用の鍵は使わない。
+全部「断られる・何も返らない」なら合格。1 つでも通ったら、決まりに穴がある。
+"""
+import json
+import sys
+import urllib.error
+import urllib.request
+
+URL = "https://lhiwkgzlajonpxjuwctb.supabase.co"
+KEY = "sb_publishable_KATBqesJxQesNGg4GcvIbw_SgpM0dLo"  # 公開してよい鍵
+
+
+def call(method, path, body=None, ctype="application/json"):
+    req = urllib.request.Request(URL + path, data=body, method=method,
+                                 headers={"apikey": KEY, "Authorization": "Bearer " + KEY, "Content-Type": ctype})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+
+
+def main():
+    results = []
+
+    code, text = call("POST", "/storage/v1/object/fridge/home/_rule_check/anon.jpg", b"\xff\xd8\xff\xd9", "image/jpeg")
+    results.append(("ログインなしで写真を上げる", code >= 400, "HTTP %d" % code))
+
+    code, text = call("POST", "/storage/v1/object/list/fridge", json.dumps({"prefix": "home", "limit": 10}).encode())
+    empty = code >= 400 or text.strip() in ("[]", "")
+    results.append(("ログインなしで写真の一覧を見る", empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:60])))
+
+    code, text = call("GET", "/storage/v1/object/fridge/home/_rule_check/anon.jpg")
+    results.append(("ログインなしで写真を開く", code >= 400, "HTTP %d" % code))
+
+    code, text = call("GET", "/storage/v1/object/public/fridge/home/_rule_check/anon.jpg")
+    results.append(("公開用の URL で写真を開く", code >= 400, "HTTP %d" % code))
+
+    code, text = call("GET", "/rest/v1/household_members?select=*")
+    empty = code >= 400 or text.strip() == "[]"
+    results.append(("ログインなしで家庭の名簿を読む", empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:60])))
+
+    code, text = call("POST", "/rest/v1/household_members", json.dumps({"user_id": "00000000-0000-0000-0000-000000000000"}).encode())
+    results.append(("ログインなしで家庭の名簿に書く", code >= 400, "HTTP %d" % code))
+
+    ok = True
+    for name, passed, detail in results:
+        ok = ok and passed
+        print("%s %s（%s）" % ("○ 断られた" if passed else "× 通ってしまった", name, detail))
+    print("判定:", "合格（ログインなしでは何もできない）" if ok else "不合格（決まりに穴がある）")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

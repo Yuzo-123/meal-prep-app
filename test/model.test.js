@@ -119,6 +119,55 @@ test("日曜の段取りは、入っていれば手順・材料・下準備に�
   assert.equal(M.isDone(st, "2026-11-16", s.steps[0].key), false);
 });
 
+test("作りおきは、日曜から数えて長いほうの日数の曜日まで", () => {
+  assert.deepEqual(M.keepUntil("2026-11-16", "3〜4日"), { day: "木", days: 4 });
+  assert.deepEqual(M.keepUntil("2026-11-16", "4〜5日"), { day: "金", days: 5 });
+  assert.deepEqual(M.keepUntil("2026-11-16", "1週間"), { day: "日", days: 7 });
+  assert.deepEqual(M.keepUntil("2026-11-16", "2週間"), { day: "日", days: 14 });
+  assert.deepEqual(M.keepUntil("2026-11-16", "3〜4日", 3), { day: "水", days: 3 }); // 索引の日数があればそれを使う
+  assert.equal(M.keepUntil("2026-11-16", "NG"), null);
+  assert.equal(M.keepUntil("2026-11-16", null), null);
+  assert.equal(M.keepUntil("2026-11-16", ""), null);
+});
+
+test("いまやることは、まだ済んでいない最初の手順。全部済めば無い", () => {
+  const a = bundle();
+  a.sunday = { steps: [
+    { id: "r1", at: "0:00", where: "コンロ①", do: "煮る" },
+    { at: "0:15", where: "まな板", title: "切る", do: "まとめて" },
+    { id: "r1", at: "0:40", where: "コンロ①", title: "火を止める", do: "冷ます" },
+  ] };
+  const s = M.sundayPlan(a);
+  assert.deepEqual(M.places(s.steps), ["コンロ①", "まな板"]);
+  assert.deepEqual(s.steps.map((x) => x.dish), ["r1", null, "r1"]);
+  let st = M.importBundle(M.emptyState(), a);
+  assert.equal(M.currentStep(st, "2026-11-16", s.steps).at, "0:00");
+  st = M.toggleCheck(st, "2026-11-16", s.steps[0].key, true);
+  assert.equal(M.currentStep(st, "2026-11-16", s.steps).at, "0:15");
+  for (const x of s.steps) st = M.toggleCheck(st, "2026-11-16", x.key, true);
+  assert.equal(M.currentStep(st, "2026-11-16", s.steps), null);
+});
+
+test("手順に品の番号が無い古いファイルでも、料理名から料理を引ける", () => {
+  const a = bundle();
+  a.sunday = { steps: [{ at: "0:00", where: "コンロ①", title: "みそ汁", do: "煮る" }] };
+  assert.equal(M.sundayPlan(a).steps[0].dish, "r1");
+});
+
+test("食べた・店に無かったの印は、チェックと別の鍵で残る", () => {
+  let s = M.importBundle(M.emptyState(), bundle());
+  const wk = "2026-11-16";
+  s = M.toggleCheck(s, wk, M.eatKey("月", "朝", "r1"), true);
+  s = M.toggleCheck(s, wk, M.noneKey("にんじん"), true);
+  assert.equal(M.isDone(s, wk, M.eatKey("月", "朝", "r1")), true);
+  assert.equal(M.isDone(s, wk, M.eatKey("火", "朝", "r1")), false);
+  assert.deepEqual(M.missingItems(s, wk, M.currentWeek(s)), ["にんじん"]);
+  assert.equal(M.isDone(s, wk, "buy:にんじん"), false); // 無かった印は「買った」にはしない
+  s = M.clearChecks(s, wk, ["buy", "pantry", "none"]);
+  assert.deepEqual(M.missingItems(s, wk, M.currentWeek(s)), []);
+  assert.equal(M.isDone(s, wk, M.eatKey("月", "朝", "r1")), true); // 買い物を外しても、食べた印は残る
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");

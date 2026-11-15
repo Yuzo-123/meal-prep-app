@@ -28,7 +28,7 @@ def dish(rid, R):
         return {"id": rid, "name": rid[2:], "home": True}
     r = R[rid]
     return {"id": rid, "name": r["name"], "kind": r["kind"], "print_page": r["print_page"],
-            "fridge": r["fridge"], "freezer": r["freezer"], "freezer_ok": r["freezer_ok"],
+            "fridge": r["fridge"], "fridge_days": r.get("fridge_days"), "freezer": r["freezer"], "freezer_ok": r["freezer_ok"],
             "time_min": r["time_min"], "kid_caution": bool(r["kid_caution"])}
 
 
@@ -92,7 +92,7 @@ def main():
         steps = []
         for s in sun.get("steps", []):
             r = R.get(s.get("id"))
-            steps.append({"at": s.get("at", ""), "where": s.get("where", ""), "do": s.get("do", ""),
+            steps.append({"id": s.get("id"), "at": s.get("at", ""), "where": s.get("where", ""), "do": s.get("do", ""),
                           "title": s.get("title") or (r["name"] if r else ""),
                           "print_page": r["print_page"] if r else None})
         materials = {"items": [], "pantry": []}
