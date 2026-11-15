@@ -74,6 +74,49 @@ function chunksOf(days) {
   return out;
 }
 
+const hm = (min) => `${Math.floor(min / 60)}:${String(Math.round(min) % 60).padStart(2, "0")}`;
+
+// 品ごとの詳しい手順（品の一覧に入っているもの）から、日曜の段取りを並べる。
+// made は [{ dish, batches }]（日曜に作る品だけ）。どれか 1 品でも手順が無ければ null（段取りは、あとから Mac 側が足す）
+export function sundayFromGuides(made) {
+  if (!made.length || made.some((x) => !x.dish.guide)) return null;
+  const times = (b) => (b > 1 ? `（${b} 回分なので、量は ${b} 倍）` : "");
+  const before = [], cut = [], guide = {};
+  for (const { dish, batches } of made) {
+    const g = dish.guide;
+    for (const t of g.before || []) before.push(`${dish.name}: ${t}`);
+    for (const c of g.cut || []) cut.push({ what: c.what, how: c.how + times(batches), for: dish.name });
+    guide[dish.id] = {
+      amounts: g.amounts + (batches > 1 ? `。今週は ${batches} 回分作るので、材料も調味料も本の ${batches} 倍です` : ""),
+      steps: g.steps, after: g.after,
+    };
+  }
+  // 並べ方: まとめて切る → 時間のかかる品から、空いたコンロへ。レンジやオーブンの品は、コンロと並行して進める
+  const cutMin = Math.min(35, 5 + 2 * cut.length);
+  const steps = [{ at: "0:00", where: "まな板", title: "野菜と肉をまとめて切る", do: "「下準備」の切りものを、全部ここで済ませます。野菜→肉→魚の順に切ると、まな板を洗う回数が減ります。" }];
+  const lanes = { "コンロ①": cutMin, "コンロ②": cutMin, other: cutMin };
+  const stove = new Set(["コンロ", "フライパン", "グリル"]);
+  const order = [...made].sort((a, b) => (b.dish.guide.total_min || 0) - (a.dish.guide.total_min || 0));
+  let end = cutMin;
+  for (const { dish, batches } of order) {
+    const g = dish.guide;
+    const need = (g.total_min || 15) + (batches - 1) * Math.max(5, Math.round((g.active_min || 10) / 2));
+    let lane = "other";
+    if (stove.has(g.where)) lane = lanes["コンロ①"] <= lanes["コンロ②"] ? "コンロ①" : "コンロ②";
+    const at = lanes[lane];
+    lanes[lane] = at + need;
+    end = Math.max(end, at + need);
+    steps.push({ at: hm(at), where: lane === "other" ? g.where : g.where === "コンロ" ? lane : `${g.where}（${lane}）`, id: dish.id, do: g.line + (batches > 1 ? `（${batches} 回分）` : ""), _at: at });
+  }
+  steps.sort((a, b) => (a._at || 0) - (b._at || 0));
+  for (const s of steps) delete s._at;
+  steps.push({ at: hm(end), where: "仕上げ", title: "冷まして容器へ", do: "粗熱を取ってから容器に移し、ふたに食べる曜日を書きます。冷凍する品は、冷めてから冷凍庫へ入れます。" });
+  return {
+    assume: `アプリが並べた目安の段取りです。コンロ 2 口の想定で、通して約 ${Math.floor((end + 10) / 60)} 時間 ${(end + 10) % 60} 分の見込みです（まだ実際に測っていません）。`,
+    before, cut, steps, guide,
+  };
+}
+
 function dishEntry(d) {
   return { id: d.id, name: d.name, kind: d.kind, print_page: d.print_page, fridge: d.fridge, fridge_days: d.fridge_days ?? null,
     freezer: d.freezer ?? null, freezer_ok: !!d.freezer_ok, time_min: d.time_min ?? null, kid_caution: !!d.kid_caution };
@@ -174,10 +217,18 @@ export function autoPlan(state, picks = [], opts = {}, rng = Math.random, now = 
   });
   const cook = made.filter((x) => x.dish.kind === "作りおき").map((x) => ({ ...dishEntry(x.dish), batches: x.batches }));
   const shop = shoppingFor(made, cat.aisles || AISLES);
-  const sunday = shoppingFor(made.filter((x) => x.dish.kind === "作りおき"), cat.aisles || AISLES);
+  const cooked = made.filter((x) => x.dish.kind === "作りおき");
+  const sunday = shoppingFor(cooked, cat.aisles || AISLES);
+  const flow = sundayFromGuides(cooked); // 日曜の段取りと詳しい手順（品の一覧に手順があるとき）
+  // 当日に作る品（帰って10分）の詳しい手順も、同じ場所に入れておく
+  const guideAll = { ...(flow ? flow.guide : {}) };
+  for (const x of made) {
+    if (x.dish.kind !== "作りおき" && x.dish.guide) guideAll[x.dish.id] = { amounts: x.dish.guide.amounts, steps: x.dish.guide.steps, after: x.dish.guide.after };
+  }
 
   // 気をつけること
-  const notes = ["アプリがその場で組んだ献立です。冷蔵庫にあるものは、まだ引いていません。日曜の段取りと詳しい手順は、あとから届きます。"];
+  const notes = [flow ? "アプリがその場で組んだ献立です。冷蔵庫にあるものは、まだ引いていません（写真を送ってあれば、あとから反映されます）。"
+    : "アプリがその場で組んだ献立です。冷蔵庫にあるものは、まだ引いていません。日曜の段取りと詳しい手順は、あとから届きます。"];
   for (const s of slots) {
     const d = s.dish;
     if (!d || d.kind !== "作りおき" || d.fridge_days == null) continue;
@@ -200,11 +251,13 @@ export function autoPlan(state, picks = [], opts = {}, rng = Math.random, now = 
   const old = weeks[week];
   const bundle = {
     format: FORMAT, version: 1, household: state.household, week_start: week,
-    memo: "アプリが組んだ献立（段取りは、あとから届きます）", people: PEOPLE, book: cat.book || "",
+    memo: flow ? "アプリが組んだ献立" : "アプリが組んだ献立（段取りは、あとから届きます）", people: PEOPLE, book: cat.book || "",
     days: plan, cook_sunday: cook,
     shopping: { buy: shop.buy, pantry: shop.pantry, skip: [] },
     notes, draft: true, photo_ids: [...uses.keys()],
-    sunday: { assume: "", before: [], cut: [], steps: [], materials: { items: sunday.buy.map(({ name, amount, for: f }) => ({ name, amount, for: f })), pantry: sunday.pantry }, guide: {} },
+    sunday: { assume: flow ? flow.assume : "", before: flow ? flow.before : [], cut: flow ? flow.cut : [],
+      steps: flow ? flow.steps.map((s) => ({ ...s, title: s.title || byId.get(s.id).name, print_page: s.id ? byId.get(s.id).print_page : null })) : [],
+      guide: guideAll, materials: { items: sunday.buy.map(({ name, amount, for: f }) => ({ name, amount, for: f })), pantry: sunday.pantry } },
     exported_at: new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19),
   };
   // もう届いている週を組み直すとき: サーバーの版の印を引き継ぐ（次の受け取りで、古い版に戻されないように）

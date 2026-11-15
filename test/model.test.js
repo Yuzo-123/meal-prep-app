@@ -476,3 +476,33 @@ test("アプリの中で組む: 日持ちを超える日は、冷凍の注意が
   assert.deepEqual(short.days["月"]["夜"], []);
   assert.equal(short.days["水"]["夜"].length, 3);
 });
+
+test("アプリの中で組む: 品の一覧に詳しい手順があれば、日曜の段取りとレシピもその場で出る", () => {
+  const s = planState();
+  const cat = M.catalog(s);
+  for (const d of cat.dishes) {
+    d.guide = { amounts: "調味料の分量は本の P.1", line: d.name + "を作る", where: d.group === "スープ" ? "コンロ" : d.group === "野菜" ? "レンジ" : "フライパン",
+      active_min: 10, total_min: d.group === "スープ" ? 30 : 15, before: [], cut: [{ what: "にんじん", how: "1/2 本を細切り" }],
+      steps: [{ t: "切る", do: "切ります。" }, { t: "煮る", do: "煮ます。", wait_min: 5 }], after: "冷蔵で 3〜4 日。" };
+  }
+  const b = P.autoPlan(s, [], { need: NEED }, rng0);
+  const sun = M.sundayPlan(b);
+  assert.equal(sun.has, true);
+  assert.equal(b.sunday.steps[0].title, "野菜と肉をまとめて切る");
+  assert.equal(b.sunday.steps[b.sunday.steps.length - 1].title, "冷まして容器へ");
+  // 作る品は、どれも段取りに 1 回ずつ出て、詳しい手順がある
+  const ids = b.cook_sunday.map((c) => c.id).sort();
+  assert.deepEqual(b.sunday.steps.filter((x) => x.id).map((x) => x.id).sort(), ids);
+  assert.deepEqual(Object.keys(b.sunday.guide).sort(), ids);
+  // 何回分か作る品は、分量の案内と切りものに倍数が付く
+  const soup = b.cook_sunday.find((c) => c.batches === 4);
+  assert.ok(b.sunday.guide[soup.id].amounts.includes("4 回分"));
+  assert.ok(b.sunday.cut.some((c) => c.for === soup.name && c.how.includes("4 倍")));
+  // 時間のかかる汁物が先。コンロは 2 口までで、同じ時刻に 3 品は乗らない
+  const first = b.sunday.steps[1];
+  assert.equal(cat.dishes.find((d) => d.id === first.id).group, "スープ");
+  assert.ok(b.memo === "アプリが組んだ献立");
+  // 手順が 1 品でも欠けていたら、段取りは出さない（あとから Mac 側が足す）
+  delete cat.dishes.find((d) => d.id === ids[0]).guide;
+  assert.equal(M.sundayPlan(P.autoPlan(s, ids, { need: NEED }, rng0)).has, false);
+});

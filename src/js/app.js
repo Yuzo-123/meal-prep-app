@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.0"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.1"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -744,8 +744,8 @@ function renderRequest() {
     const see = !arrived ? "" : h.current === lastRequest.week_start
       ? `<p class="hint">いま、この週を表示しています。</p>`
       : `<div class="formfoot"><button type="button" class="btn" data-seeweek="${esc(lastRequest.week_start)}">この週を見る</button><span>いまは ${esc(M.weekSpan(h.current))} の週を表示中</span></div>`;
-    const label = { new: mine && mine.draft ? "献立と買い物は、もう出ています。日曜の段取りと詳しい手順は、あとから届きます" : "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります",
-      working: mine && mine.draft ? "献立と買い物は、もう出ています。いま、日曜の段取りを足しています" : "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
+    const label = { new: mine && mine.draft ? (M.sundayPlan(mine).has ? "献立・買い物・レシピは、もう出ています" : "献立と買い物は、もう出ています。日曜の段取りと詳しい手順は、あとから届きます") : "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります",
+      working: mine && mine.draft ? (M.sundayPlan(mine).has ? "献立・買い物・レシピは、もう出ています。いま、冷蔵庫の写真を反映しています" : "献立と買い物は、もう出ています。いま、日曜の段取りを足しています") : "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
       failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
     box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>${see}`;
   }
@@ -803,7 +803,7 @@ async function sendRequest() {
       renderRequest();
       C.cachePhotos(session, cloudUser.household, M.photoIds(draft), hydratePhotos).catch(() => {});
       showTab("menu");
-      toast("献立と買い物を組みました。日曜の段取りは、あとから届きます");
+      toast(M.sundayPlan(draft).has ? "献立・買い物・レシピを組みました" : "献立と買い物を組みました。日曜の段取りは、あとから届きます");
     } else {
       renderRequest();
       toast("献立を頼みました。これから組むので、すぐには変わりません");
