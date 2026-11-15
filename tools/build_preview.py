@@ -22,6 +22,7 @@ CATALOG = os.path.join(os.path.dirname(APP), "meal-prep", "02_outputs", "app_cat
 BANNER_CSS = """
 .previewbar{font-size:12px;line-height:1.5;color:var(--sub);background:var(--surface);border-radius:12px;padding:8px 12px;margin:8px 0 4px}
 .previewbar b{color:var(--on)}
+#loginform label,#loginform .formfoot{display:none}
 """
 
 LOADER = """<script type="module">
@@ -68,6 +69,11 @@ def main():
     banner = ('<p class="previewbar"><b>確認用</b> 版 %s・%s に組み立て・%s の週・料理の写真なし。'
               'ログインと受け取りは、ここでは使えません。</p>' % (version, now.strftime("%m/%d %H:%M"), week["week_start"]))
     body = body.replace('<div class="wrap">', '<div class="wrap">\n' + banner, 1)
+    login_hint = "冷蔵庫の写真を送るには、家族のログインが要ります。最初の 1 回だけです。"
+    if body.count(login_hint) != 1:
+        sys.exit("index.html の形が変わっています（ログインの案内が見つからない）")
+    body = body.replace(login_hint, "この確認用のページでは、ログインできません（外のサーバーとつながらない作りのため）。"
+                        "ログイン・冷蔵庫の写真を送る・献立を頼む・料理の写真は、iPhone のアプリで確かめてください。", 1)
     body = body.replace(script, LOADER % {"stamp": now.strftime("%Y%m%d%H%M%S")})
     page = "<title>日曜につくりおき 確認用</title>\n<style>\n%s\n%s</style>\n%s" % (css, BANNER_CSS, body)
 
