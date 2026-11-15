@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.1"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.2"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -482,7 +482,7 @@ function saveLog() {
 function renderSettings() {
   const h = M.home(state);
   const weeks = Object.keys(h.weeks).sort().reverse();
-  $("#weeksel").innerHTML = weeks.map((k) => `<option value="${k}"${k === h.current ? " selected" : ""}>${M.weekSpan(k)} の週</option>`).join("");
+  $("#weeksel").innerHTML = weeks.map((k) => `<option value="${esc(k)}"${k === h.current ? " selected" : ""}>${M.weekSpan(k)} の週</option>`).join("");
   $("#weekbox").hidden = weeks.length < 2;
   // 献立タブの先頭にも、週の切り替えを出す（持っている週が 2 つ以上のとき。新しい 3 週まで）
   const bar = $("#weekbar");
