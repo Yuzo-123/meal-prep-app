@@ -159,6 +159,14 @@ export async function cachedPhotoUrl(id) {
   return hit ? URL.createObjectURL(await hit.blob()) : null;
 }
 
+// サーバーに写真がある品の番号の一覧
+export async function listPhotoIds(session, household) {
+  const rows = await call(`/storage/v1/object/list/${DISH_BUCKET}`, {
+    method: "POST", token: session.access_token, body: JSON.stringify({ prefix: household, limit: 1000 }),
+  });
+  return (rows || []).map((r) => r.name).filter((n) => n && n.endsWith(".jpg")).map((n) => n.slice(0, -4));
+}
+
 // まだ端末に無い写真だけを取りに行く。戻り値は新しく入った枚数。
 // 4 枚ずつ同時に取りに行き、1 組入るたびに onBatch を呼ぶ（届いた順に画面へ出せるように）。
 export async function cachePhotos(session, household, ids, onBatch) {

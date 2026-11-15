@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.11.1"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.2"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -537,6 +537,7 @@ function renderPlan() {
   $("#picklist").innerHTML = shown.map((d) => {
     const keep = d.kind === "作りおき" ? (d.fridge ? `冷蔵 ${d.fridge}` : "") + (d.freezer_ok ? "・冷凍できる" : "") : d.time_min ? `当日 ${d.time_min} 分` : "当日";
     return `<label class="row${pick.ids.has(d.id) ? " picked" : ""}" data-pick="${esc(d.id)}"><input type="checkbox"${pick.ids.has(d.id) ? " checked" : ""}><span class="box"></span>
+      <span class="thumb"><img data-thumb="${esc(d.id)}" alt="" hidden></span>
       <span class="body"><b>${esc(d.name)}</b><small>${esc([d.section, keep].filter(Boolean).join("・"))}${d.kid_caution ? `<em>取り分け注意</em>` : ""}</small></span>
       <span class="amt pg">P.${esc(d.print_page)}</span></label>`;
   }).join("");
@@ -546,6 +547,28 @@ function renderPlan() {
     renderRequest();
   }));
   renderRequest();
+  hydrateThumbs();
+}
+
+// 品の一覧の小さな写真。サーバーに写真がある品だけ出る（無い品は、生成りの四角のまま）。
+let photoAvail = null; // サーバーに写真がある品の番号
+async function hydrateThumbs() {
+  const imgs = $$("#picklist img[data-thumb]");
+  if (!imgs.length) return;
+  const show = async () => {
+    for (const img of imgs) {
+      if (!img.hidden || !img.isConnected) continue;
+      const url = await C.cachedPhotoUrl(img.dataset.thumb).catch(() => null);
+      if (url) { img.src = url; img.hidden = false; }
+    }
+  };
+  await show(); // 端末にもう写しがあるぶんを先に出す
+  if (!cloudUser || !cloudUser.household) return;
+  try {
+    if (!photoAvail) photoAvail = new Set(await C.listPhotoIds(cloudUser.session, cloudUser.household));
+    const want = imgs.map((i) => i.dataset.thumb).filter((id) => photoAvail.has(id));
+    await C.cachePhotos(cloudUser.session, cloudUser.household, want, show);
+  } catch (e) { /* 写真が取れなくても、一覧は使える */ }
 }
 
 function currentRequest() {

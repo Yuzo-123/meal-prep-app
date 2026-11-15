@@ -82,14 +82,33 @@ def push_week(plan_path, dry, with_photos):
         print("送りました: 料理の写真 %d 枚" % len(bundle["photo_ids"]))
 
 
+def push_all_photos(dry):
+    """本から切り出してある料理の写真を全部送る（品の一覧に写真を出すため）。すでに同じ名前があれば置き換える。"""
+    photo_dir = os.path.join(os.path.dirname(HERE), "biz-dev", "library", "book-yaseru-tsukurioki-330", "pages", "_photos")
+    names = sorted(n for n in os.listdir(photo_dir) if n.endswith(".jpg"))
+    total = sum(os.path.getsize(os.path.join(photo_dir, n)) for n in names)
+    print("料理の写真: %d 枚 / 合計 %.1f MB" % (len(names), total / 1e6))
+    if dry:
+        print("（試しなので、何も送っていません）")
+        return
+    for i, n in enumerate(names, 1):
+        data = open(os.path.join(photo_dir, n), "rb").read()
+        call("POST", "/storage/v1/object/dish/%s/%s" % (HOUSEHOLD, n), data, "image/jpeg", {"x-upsert": "true"})
+        if i % 50 == 0:
+            print("  %d 枚まで送りました" % i)
+    print("送りました: 料理の写真 %d 枚" % len(names))
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dry = "--dry-run" in sys.argv
+    if "--all-photos" in sys.argv:
+        push_all_photos(dry)
     if "--catalog" in sys.argv:
         push_catalog(dry)
     if args:
         push_week(args[0], dry, "--no-photos" not in sys.argv)
-    if not args and "--catalog" not in sys.argv:
+    if not args and "--catalog" not in sys.argv and "--all-photos" not in sys.argv:
         print(__doc__)
 
 
