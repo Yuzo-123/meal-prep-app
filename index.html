@@ -27,18 +27,18 @@
       <div id="panels"></div>
       <button class="btn ghost wide" data-go="plan">次の週の献立を作る</button>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="plan">献立を作る</button> <button class="btn ghost" data-go="set">週のデータを取り込む</button></div>
+    <div class="blank"><p>まだ週のデータが入っていません。ログインすると、献立が自動で届きます。</p><button class="btn" data-go="fridge">ログインする</button> <button class="btn ghost" data-go="plan">献立を作る</button></div>
   </section>
 
   <section class="view" id="v-plan">
     <h2>献立を作る</h2>
     <div class="doors">
-      <button class="door" data-go="fridge"><b>冷蔵庫の写真から</b><span>家にある物を使い切りたい週に。写真を送って、lio に組んでもらう</span></button>
-      <button class="door" id="door-pick"><b>カテゴリから選ぶ</b><span>写真が無くても、作りたい品を選んで lio に渡す</span></button>
+      <button class="door" data-go="fridge"><b>冷蔵庫の写真から</b><span>家にある物を使い切りたい週に。写真を送って、献立を組んでもらう</span></button>
+      <button class="door" id="door-pick"><b>カテゴリから選ぶ</b><span>写真が無くても、作りたい品を選んで注文する</span></button>
     </div>
     <div id="pickbox" hidden>
       <div id="pick-nocat" class="form" hidden>
-        <p class="hint">品の一覧がまだ入っていません。lio が書き出した一覧のファイル（app_catalog.json）を、「設定」の「ファイルを選ぶ」で取り込んでください。</p>
+        <p class="hint">品の一覧がまだ入っていません。品の一覧のファイル（app_catalog.json）を、「設定」の「ファイルを選ぶ」で取り込んでください。</p>
         <div class="formfoot"><button class="btn ghost" data-go="set">設定を開く</button></div>
       </div>
       <div id="pick-main" hidden>
@@ -49,14 +49,14 @@
         <label class="check"><input type="checkbox" id="kidok"> 取り分け注意の品を除く</label>
         <p class="hint" id="pickcount"></p>
         <div class="list keep" id="picklist"></div>
-        <h2>lio に渡す</h2>
+        <h2>注文する</h2>
         <div class="form">
           <p class="hint" id="pickweek"></p>
-          <label class="check"><input type="checkbox" id="fillrest" checked> 足りない分は lio におまかせ</label>
+          <label class="check"><input type="checkbox" id="fillrest" checked> 足りない分はおまかせ</label>
           <label>ひとこと（例: 金曜は外食）<textarea id="picknote" rows="2"></textarea></label>
           <pre class="req" id="reqtext"></pre>
           <div class="formfoot"><button class="btn" id="reqcopy" type="button">注文をコピーする</button><button class="btn ghost" id="reqshare" type="button" hidden>共有する</button><button class="btn ghost" id="pickclear" type="button">選び直す</button></div>
-          <p class="hint">コピーした文を、lio のチャットに貼ってください。lio が日持ち・量・取り分けを点検して、献立と買い物リストを作ります。</p>
+          <p class="hint">コピーした文を、献立を頼むチャットに貼ってください。日持ち・量・取り分けを点検したうえで、献立と買い物リストができます。</p>
         </div>
       </div>
     </div>
@@ -160,7 +160,7 @@
   <section class="view" id="v-set">
     <h2>週のデータを取り込む</h2>
     <div class="form">
-      <p class="hint">lio が書き出した今週のファイル（app_week.json）を選びます。</p>
+      <p class="hint">今週のファイル（app_week.json）を選びます。</p>
       <label class="btn filebtn">ファイルを選ぶ<input type="file" id="file" accept=".json,application/json"></label>
       <label>または、中身を貼り付ける<textarea id="paste" rows="3" placeholder="ここに貼り付け"></textarea></label>
       <div class="formfoot"><button class="btn ghost" id="pastego">貼り付けた中身を取り込む</button></div>

@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.6.1"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.7.1"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -41,7 +41,10 @@ let dayFilter = "all";
 // 献立のカード。押すと「食べた」の印が付く。作りおきは、日曜に作り終えたら「〇曜まで」が出る。
 function dishCard(d, w, day, meal) {
   const src = M.photoOf(w, d.id);
-  const pic = src ? `<img class="pic" src="${esc(src)}" alt="" loading="lazy">` : "";
+  // 取り込みファイルに写真が入っていればそれを出す。サーバーから来た週は、端末の写しからあとで入れる。
+  const later = !src && M.photoIds(w).includes(d.id);
+  const pic = src ? `<img class="pic" src="${esc(src)}" alt="" loading="lazy">`
+    : later ? `<img class="pic" data-dish="${esc(d.id)}" alt="" hidden>` : "";
   const prep = d.kind === "作りおき";
   const until = prep ? M.keepUntil(w.week_start, d.fridge, d.fridge_days) : null;
   const tag = d.home ? "家にある" : prep ? "作りおき" : d.time_min ? `当日 ${esc(d.time_min)} 分` : "当日";
@@ -90,6 +93,40 @@ function renderMenu(w) {
   });
   $$("#daypills .pill").forEach((p) => p.addEventListener("click", () => setDay(p.dataset.day)));
   setDay(M.todayDay(w.week_start) || pref("day") || "all");
+  hydratePhotos();
+}
+
+// 端末に写しがある料理の写真を、献立カードに入れる
+async function hydratePhotos() {
+  const urls = new Map();
+  for (const img of $$("#panels img[data-dish]")) {
+    const id = img.dataset.dish;
+    if (!urls.has(id)) urls.set(id, await C.cachedPhotoUrl(id).catch(() => null));
+    if (!urls.get(id)) continue;
+    img.src = urls.get(id);
+    img.hidden = false;
+    img.closest(".card").classList.add("haspic");
+  }
+}
+
+// ログイン中なら、新しい週の献立・品の一覧・料理の写真を受け取る。電波が無ければ、端末の写しのまま動く。
+let syncing = false;
+async function syncFromServer() {
+  if (syncing || !cloudUser || !cloudUser.household) return;
+  syncing = true;
+  try {
+    const { session, household } = cloudUser;
+    const w = M.mergeServerWeeks(state, await C.fetchWeeks(session, household));
+    const c = M.mergeServerCatalog(w.state, await C.fetchCatalog(session, household));
+    if ((w.changed.length || c.changed) && commit(c.state)) {
+      renderAll();
+      if (!$("#pickbox").hidden) renderPlan();
+      if (w.changed.length) toast("新しい献立を受け取りました");
+    }
+    const cur = M.currentWeek(state);
+    if (cur) await C.cachePhotos(session, household, M.photoIds(cur), hydratePhotos);
+  } catch (e) { /* 受け取れなくても、いま端末にあるぶんで動く */ }
+  syncing = false;
 }
 
 function setDay(d) {
@@ -375,7 +412,7 @@ async function copyRequest() {
   const text = currentRequest().text;
   try {
     await navigator.clipboard.writeText(text);
-    toast("注文をコピーしました。lio のチャットに貼ってください");
+    toast("注文をコピーしました。献立を頼むチャットに貼ってください");
   } catch (e) {
     const range = document.createRange();
     range.selectNodeContents($("#reqtext"));
@@ -406,6 +443,7 @@ async function refreshFridge() {
   } catch (e) {
     $("#fr-count").textContent = e.message;
   }
+  syncFromServer();
 }
 
 async function doLogin(e) {

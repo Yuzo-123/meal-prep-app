@@ -47,6 +47,20 @@ def main():
     code, text = call("POST", "/rest/v1/household_members", json.dumps({"user_id": "00000000-0000-0000-0000-000000000000"}).encode())
     results.append(("ログインなしで家庭の名簿に書く", code >= 400, "HTTP %d" % code))
 
+    for table in ("weeks", "catalogs"):
+        code, text = call("GET", "/rest/v1/%s?select=*&limit=1" % table)
+        empty = code >= 400 or text.strip() == "[]"
+        results.append(("ログインなしで %s の表を読む" % table, empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:40])))
+    code, text = call("POST", "/rest/v1/weeks", json.dumps({"household": "home", "week_start": "2000-01-03", "bundle": {}}).encode())
+    results.append(("ログインなしで週の献立を書く", code >= 400, "HTTP %d" % code))
+    code, text = call("POST", "/storage/v1/object/list/dish", json.dumps({"prefix": "home", "limit": 10}).encode())
+    empty = code >= 400 or text.strip() in ("[]", "")
+    results.append(("ログインなしで料理の写真の一覧を見る", empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:40])))
+    code, text = call("GET", "/storage/v1/object/dish/home/r046.jpg")
+    results.append(("ログインなしで料理の写真を開く", code >= 400, "HTTP %d" % code))
+    code, text = call("POST", "/storage/v1/object/dish/home/_rule_check.jpg", b"\xff\xd8\xff\xd9", "image/jpeg")
+    results.append(("ログインなしで料理の写真を上げる", code >= 400, "HTTP %d" % code))
+
     ok = True
     for name, passed, detail in results:
         ok = ok and passed

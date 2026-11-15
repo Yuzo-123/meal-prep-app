@@ -5,6 +5,7 @@
 export const SUPABASE_URL = "https://lhiwkgzlajonpxjuwctb.supabase.co";
 export const SUPABASE_KEY = "sb_publishable_KATBqesJxQesNGg4GcvIbw_SgpM0dLo";
 export const BUCKET = "fridge";
+export const DISH_BUCKET = "dish";
 const SESSION_KEY = "mealprep-session-v1";
 
 // ---------- 画面に依らない小さな計算（test/ から呼ぶ） ----------
@@ -115,6 +116,53 @@ export async function myHousehold(session) {
   const rows = await call("/rest/v1/household_members?select=household", { token: session.access_token });
   if (!rows || !rows.length) throw new Error("この人はまだ家庭に登録されていません");
   return rows[0].household;
+}
+
+// ---------- 献立・品の一覧・料理の写真を受け取る ----------
+
+export async function fetchWeeks(session, household, limit = 3) {
+  return (await call(`/rest/v1/weeks?select=week_start,updated_at,bundle&household=eq.${encodeURIComponent(household)}&order=week_start.desc&limit=${limit}`,
+    { token: session.access_token })) || [];
+}
+
+export async function fetchCatalog(session, household) {
+  const rows = await call(`/rest/v1/catalogs?select=updated_at,data&household=eq.${encodeURIComponent(household)}`, { token: session.access_token });
+  return rows && rows.length ? rows[0] : null;
+}
+
+// 料理の写真は、端末にも写しを持つ（電波なしでも出るように）。鍵は品の番号。
+const PHOTO_CACHE = "mealprep-dish-photos";
+const photoKey = (id) => `./__dish/${encodeURIComponent(id)}.jpg`;
+
+export async function cachedPhotoUrl(id) {
+  if (!("caches" in globalThis)) return null;
+  const hit = await (await caches.open(PHOTO_CACHE)).match(photoKey(id));
+  return hit ? URL.createObjectURL(await hit.blob()) : null;
+}
+
+// まだ端末に無い写真だけを取りに行く。戻り値は新しく入った枚数。
+// 4 枚ずつ同時に取りに行き、1 組入るたびに onBatch を呼ぶ（届いた順に画面へ出せるように）。
+export async function cachePhotos(session, household, ids, onBatch) {
+  if (!("caches" in globalThis)) return 0;
+  const cache = await caches.open(PHOTO_CACHE);
+  const missing = [];
+  for (const id of ids) if (!(await cache.match(photoKey(id)))) missing.push(id);
+  let added = 0;
+  const one = async (id) => {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${DISH_BUCKET}/${household}/${encodeURIComponent(id)}.jpg`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + session.access_token } });
+    if (!res.ok) return 0; // その品の写真がまだ無いだけ
+    await cache.put(photoKey(id), new Response(await res.blob(), { headers: { "Content-Type": "image/jpeg" } }));
+    return 1;
+  };
+  for (let i = 0; i < missing.length; i += 4) {
+    let got;
+    try { got = await Promise.all(missing.slice(i, i + 4).map(one)); } catch (e) { break; } // 電波が切れたら、次に開いたときに続きを取る
+    const n = got.reduce((a, b) => a + b, 0);
+    added += n;
+    if (n && onBatch) onBatch();
+  }
+  return added;
 }
 
 // 写真を縮めて JPEG にする（スマホの写真は 1 枚数 MB あるので、送る前に小さくする）

@@ -57,6 +57,48 @@ export function importBundle(state, bundle) {
   return next;
 }
 
+// ---------- サーバーから受け取った週を取り込む ----------
+
+// 表示する週を選ぶ。今日を含む週（土日は次の月曜の週）があればそれ、無ければいちばん新しい週。
+export function pickCurrentWeek(weekStarts, now = new Date()) {
+  if (!weekStarts.length) return null;
+  const sorted = [...weekStarts].sort();
+  const dow = now.getDay(); // 0=日 … 6=土
+  const shift = dow === 0 ? 1 : dow === 6 ? 2 : 1 - dow;
+  const target = iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + shift));
+  return sorted.includes(target) ? target : sorted[sorted.length - 1];
+}
+
+// rows は [{week_start, updated_at, bundle}]。前に受け取ったものと同じなら何もしない。
+export function mergeServerWeeks(state, rows, now = new Date()) {
+  let next = state;
+  const changed = [];
+  for (const row of [...rows].sort((a, b) => (a.week_start < b.week_start ? -1 : 1))) {
+    const have = home(next).weeks[row.week_start];
+    if (have && have.server_updated_at === row.updated_at) continue;
+    next = importBundle(next, { ...row.bundle, household: next.household, server_updated_at: row.updated_at });
+    changed.push(row.week_start);
+  }
+  if (changed.length) {
+    next = structuredClone(next);
+    home(next).current = pickCurrentWeek(Object.keys(home(next).weeks), now);
+  }
+  return { state: next, changed };
+}
+
+export function mergeServerCatalog(state, row) {
+  const have = catalog(state);
+  if (!row || (have && have.server_updated_at === row.updated_at)) return { state, changed: false };
+  const next = importCatalog(state, row.data);
+  home(next).catalog.server_updated_at = row.updated_at;
+  return { state: next, changed: true };
+}
+
+// その週で写真がありうる品の番号（サーバーから来た週は photo_ids、ファイルから入れた週は中の写真）
+export function photoIds(bundle) {
+  return bundle.photo_ids && bundle.photo_ids.length ? bundle.photo_ids : Object.keys(bundle.photos || {});
+}
+
 export function photoOf(bundle, id) {
   const p = bundle && bundle.photos ? bundle.photos[id] : null;
   return typeof p === "string" && p.startsWith("data:image/") ? p : null;
@@ -125,7 +167,7 @@ export function buildRequest(state, picks, opts = {}, now = new Date()) {
     `【献立の注文】${weekSpan(week)} の週`,
     chosen.length ? "作りたい品:" : "作りたい品: 指定なし（全部おまかせ）",
     ...chosen.map((d) => `・${d.name}（${d.id}・P.${d.print_page}・${d.kind}）`),
-    `足りない分: ${data.fill_rest ? "lio におまかせ" : "足さない"}`,
+    `足りない分: ${data.fill_rest ? "おまかせ" : "足さない"}`,
     `取り分け注意の品: ${data.kid_ok_only ? "除く" : "入れてよい"}`,
   ];
   if (data.note) lines.push(`ひとこと: ${data.note}`);

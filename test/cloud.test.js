@@ -33,6 +33,16 @@ test("端末に残すログイン状態にメールアドレスを入れない",
   assert.equal(JSON.stringify(s).includes("example.com"), false);
 });
 
+test("画面に出る文言に、作り手の呼び名（lio）を出さない", () => {
+  // 2026-11-15 の Yuzo の指示。画面の骨組みと画面の動きのファイルを見る（計算の部品は、文字として書いた所だけ）
+  for (const f of ["../index.html", "../src/js/app.js", "../manifest.json"]) {
+    assert.equal(/lio/i.test(readFileSync(new URL(f, import.meta.url), "utf8")), false, f);
+  }
+  const model = readFileSync(new URL("../src/js/model.js", import.meta.url), "utf8");
+  const strings = model.match(/"[^"\n]*"|`[^`]*`/g) || [];
+  assert.deepEqual(strings.filter((s) => /lio/i.test(s)), []);
+});
+
 test("アプリのファイルに管理用の鍵が入っていない", () => {
   for (const f of ["../src/js/cloud.js", "../src/js/app.js", "../index.html", "../service-worker.js", "../tools/check_rules.py"]) {
     const text = readFileSync(new URL(f, import.meta.url), "utf8");

@@ -217,6 +217,38 @@ test("lio への注文は、選んだ品・おまかせ・取り分け・ひと�
   assert.ok(none.text.includes("指定なし（全部おまかせ）"));
 });
 
+test("表示する週は、今日を含む週。土日は次の月曜の週。無ければいちばん新しい週", () => {
+  const ws = ["2026-11-09", "2026-11-16", "2026-11-23"];
+  assert.equal(M.pickCurrentWeek(ws, new Date(2026, 10, 18)), "2026-11-16"); // 水曜
+  assert.equal(M.pickCurrentWeek(ws, new Date(2026, 10, 15)), "2026-11-16"); // 日曜 → 明日からの週
+  assert.equal(M.pickCurrentWeek(ws, new Date(2026, 10, 14)), "2026-11-16"); // 土曜 → 次の週
+  assert.equal(M.pickCurrentWeek(ws, new Date(2026, 11, 20)), "2026-11-23"); // 当てはまる週が無い
+  assert.equal(M.pickCurrentWeek([], new Date()), null);
+});
+
+test("サーバーから来た週は、新しくなったものだけ取り込み、チェックは残る", () => {
+  let s = M.importBundle(M.emptyState(), bundle());
+  s = M.toggleCheck(s, "2026-11-16", "buy:にんじん", true);
+  const row = { week_start: "2026-11-16", updated_at: "t1", bundle: { ...bundle(), memo: "サーバー版", photo_ids: ["r1"] } };
+  let r = M.mergeServerWeeks(s, [row], new Date(2026, 10, 18));
+  assert.deepEqual(r.changed, ["2026-11-16"]);
+  assert.equal(M.currentWeek(r.state).memo, "サーバー版");
+  assert.equal(M.isDone(r.state, "2026-11-16", "buy:にんじん"), true);
+  assert.deepEqual(M.photoIds(M.currentWeek(r.state)), ["r1"]);
+  r = M.mergeServerWeeks(r.state, [row], new Date(2026, 10, 18)); // 同じものが来ても何もしない
+  assert.deepEqual(r.changed, []);
+  r = M.mergeServerWeeks(r.state, [{ ...row, updated_at: "t2" }], new Date(2026, 10, 18));
+  assert.deepEqual(r.changed, ["2026-11-16"]);
+});
+
+test("サーバーから来た品の一覧も、新しくなったときだけ入れ替える", () => {
+  let r = M.mergeServerCatalog(M.emptyState(), { updated_at: "c1", data: cat() });
+  assert.equal(r.changed, true);
+  assert.equal(M.catalog(r.state).dishes.length, 3);
+  assert.equal(M.mergeServerCatalog(r.state, { updated_at: "c1", data: cat() }).changed, false);
+  assert.equal(M.mergeServerCatalog(r.state, null).changed, false);
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
