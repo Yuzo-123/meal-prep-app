@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.10.2"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.11.1"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -123,6 +123,7 @@ async function syncFromServer() {
       renderAll();
       if (!$("#pickbox").hidden) renderPlan();
       if (w.changed.length) toast("新しい献立を受け取りました");
+      loadLastRequest();
     }
     const cur = M.currentWeek(state);
     if (cur) await C.cachePhotos(session, household, M.photoIds(cur), hydratePhotos);
@@ -551,11 +552,61 @@ function currentRequest() {
   return M.buildRequest(state, [...pick.ids], { kidOk: pick.kidOk, fillRest: $("#fillrest").checked, note: $("#picknote").value });
 }
 
+let photosToday = 0;   // 今日送った冷蔵庫の写真の枚数（冷蔵庫タブで数えたもの）
+let lastRequest = null; // サーバーにある、いちばん新しい注文
+
 function renderRequest() {
   const r = currentRequest();
   $("#pickweek").textContent = `${M.weekSpan(r.data.week_start)} の週の献立を頼みます`;
   $("#reqtext").textContent = r.text;
   $("#reqshare").hidden = !navigator.share;
+  const cat = M.catalog(state);
+  const names = cat ? [...pick.ids].map((id) => (cat.dishes.find((d) => d.id === id) || {}).name).filter(Boolean) : [];
+  $("#pickedsum").textContent = names.length ? `${names.length} 品を選んでいます: ${names.join("、")}` : "まだ選んでいません。選ばなければ、全部おまかせになります。";
+  $("#pickclear").hidden = !names.length;
+  $("#reqphotos").textContent = photosToday
+    ? `今日は冷蔵庫の写真を ${photosToday} 枚送っています。この写真を使って組みます。`
+    : "冷蔵庫の写真を送っておくと、家にある物を使い切る献立になります。";
+  $("#reqsend").disabled = !cloudUser;
+  if (!cloudUser) $("#reqmsg").textContent = "頼むには、冷蔵庫タブでログインします";
+  const box = $("#reqstatus");
+  box.hidden = !lastRequest;
+  if (lastRequest) {
+    const when = new Date(lastRequest.created_at);
+    const at = `${when.getMonth() + 1}/${when.getDate()} ${when.getHours()}:${String(when.getMinutes()).padStart(2, "0")}`;
+    const label = { new: "頼みました。組み始めるのを待っています", working: "いま組んでいます", done: "届きました。献立タブを見てください",
+      failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
+    box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>`;
+  }
+}
+
+async function loadLastRequest() {
+  if (!cloudUser || !cloudUser.household) return;
+  try {
+    lastRequest = await C.latestRequest(cloudUser.session, cloudUser.household);
+    renderRequest();
+  } catch (e) { /* 見られなくても、頼むことはできる */ }
+}
+
+async function sendRequest() {
+  const btn = $("#reqsend");
+  if (!cloudUser || !cloudUser.household) { $("#reqmsg").textContent = "頼むには、冷蔵庫タブでログインします"; return; }
+  btn.disabled = true;
+  $("#reqmsg").textContent = "送っています…";
+  try {
+    const session = await C.ensureSession();
+    const r = currentRequest();
+    lastRequest = await C.sendRequest(session, cloudUser.household, { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text });
+    $("#reqmsg").textContent = "";
+    $("#picknote").value = "";
+    pick.ids.clear();
+    if (!$("#pickbox").hidden) renderPlan(); else renderRequest();
+    toast("献立を頼みました。できあがると、ここに届きます");
+    window.scrollTo(0, 0);
+  } catch (e) {
+    $("#reqmsg").textContent = e.message;
+  }
+  btn.disabled = false;
 }
 
 async function copyRequest() {
@@ -590,6 +641,8 @@ async function refreshFridge() {
     const n = await C.countToday(session, cloudUser.household);
     $("#fr-count").textContent = n ? `今日は ${n} 枚送っています` : "今日はまだ送っていません";
     $("#tfridge").textContent = n ? n : "";
+    photosToday = n;
+    renderRequest();
   } catch (e) {
     $("#fr-count").textContent = e.message;
   }
@@ -712,7 +765,9 @@ function init() {
     renderAll();
   });
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
-  $("#door-pick").addEventListener("click", () => { $("#pickbox").hidden = false; $("#door-pick").classList.add("on"); renderPlan(); });
+  $("#door-pick").addEventListener("click", () => { $("#pickbox").hidden = false; renderPlan(); $("#pickbox").scrollIntoView({ block: "start", behavior: "smooth" }); });
+  $("#reqsend").addEventListener("click", sendRequest);
+  $$("[data-go=plan]").forEach((b) => b.addEventListener("click", () => { renderRequest(); loadLastRequest(); }));
   $("#kidok").addEventListener("change", (e) => { pick.kidOk = e.target.checked; renderPlan(); });
   $("#fillrest").addEventListener("change", renderRequest);
   $("#picknote").addEventListener("input", renderRequest);

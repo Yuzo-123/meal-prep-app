@@ -61,6 +61,12 @@ def main():
     code, text = call("POST", "/storage/v1/object/dish/home/_rule_check.jpg", b"\xff\xd8\xff\xd9", "image/jpeg")
     results.append(("ログインなしで料理の写真を上げる", code >= 400, "HTTP %d" % code))
 
+    code, text = call("GET", "/rest/v1/requests?select=*&limit=1")
+    empty = code >= 400 or text.strip() == "[]"
+    results.append(("ログインなしで注文を読む", empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:40])))
+    code, text = call("POST", "/rest/v1/requests", json.dumps({"household": "home", "week_start": "2000-01-03", "payload": {}}).encode())
+    results.append(("ログインなしで献立を頼む", code >= 400, "HTTP %d" % code))
+
     ok = True
     for name, passed, detail in results:
         ok = ok and passed

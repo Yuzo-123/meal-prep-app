@@ -130,6 +130,25 @@ export async function fetchCatalog(session, household) {
   return rows && rows.length ? rows[0] : null;
 }
 
+// ---------- 献立を頼む（注文をサーバーに置く。組むのは Mac 側） ----------
+
+export async function sendRequest(session, household, data) {
+  const { week_start, ...payload } = data;
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/requests`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ household, week_start, payload }),
+  }).catch(() => { throw new Error("サーバーにつながりません（電波を確かめてください）"); });
+  if (!res.ok) throw new Error(res.status === 404 ? "頼む仕組みが、まだサーバーに入っていません" : "頼めませんでした（HTTP " + res.status + "）");
+  return (await res.json())[0];
+}
+
+export async function latestRequest(session, household) {
+  const rows = await call(`/rest/v1/requests?select=id,created_at,week_start,status,status_note&household=eq.${encodeURIComponent(household)}&order=created_at.desc&limit=1`,
+    { token: session.access_token });
+  return rows && rows.length ? rows[0] : null;
+}
+
 // 料理の写真は、端末にも写しを持つ（電波なしでも出るように）。鍵は品の番号。
 const PHOTO_CACHE = "mealprep-dish-photos";
 const photoKey = (id) => `./__dish/${encodeURIComponent(id)}.jpg`;

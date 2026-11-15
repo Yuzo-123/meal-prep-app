@@ -37,15 +37,25 @@
   </section>
 
   <section class="view" id="v-plan">
-    <h2>献立を作る</h2>
-    <div class="doors">
-      <button class="door" data-go="fridge"><b>冷蔵庫の写真から</b><span>家にある物を使い切りたい週に。写真を送って、献立を組んでもらう</span></button>
-      <button class="door" id="door-pick"><b>カテゴリから選ぶ</b><span>写真が無くても、作りたい品を選んで注文する</span></button>
+    <h2>献立を頼む</h2>
+    <p class="hint" id="pickweek"></p>
+    <div class="form" id="reqstatus" hidden></div>
+
+    <h2>① 冷蔵庫にあるものを使う</h2>
+    <div class="form">
+      <p class="hint" id="reqphotos">冷蔵庫の写真を送っておくと、家にある物を使い切る献立になります。</p>
+      <div class="formfoot"><button class="btn ghost" data-go="fridge" type="button">冷蔵庫の写真を送る</button></div>
+    </div>
+
+    <h2>② 食べたいものを選ぶ</h2>
+    <div class="form">
+      <p class="hint" id="pickedsum"></p>
+      <div class="formfoot"><button class="btn ghost" id="door-pick" type="button">カテゴリから選ぶ</button><button class="btn ghost" id="pickclear" type="button">選び直す</button></div>
     </div>
     <div id="pickbox" hidden>
       <div id="pick-nocat" class="form" hidden>
-        <p class="hint">品の一覧がまだ入っていません。品の一覧のファイル（app_catalog.json）を、「設定」の「ファイルを選ぶ」で取り込んでください。</p>
-        <div class="formfoot"><button class="btn ghost" data-go="set">設定を開く</button></div>
+        <p class="hint">品の一覧がまだ届いていません。「冷蔵庫」タブでログインすると届きます。</p>
+        <div class="formfoot"><button class="btn ghost" data-go="fridge" type="button">ログインする</button></div>
       </div>
       <div id="pick-main" hidden>
         <div class="sticky">
@@ -55,16 +65,19 @@
         <label class="check"><input type="checkbox" id="kidok"> 取り分け注意の品を除く</label>
         <p class="hint" id="pickcount"></p>
         <div class="list keep" id="picklist"></div>
-        <h2>注文する</h2>
-        <div class="form">
-          <p class="hint" id="pickweek"></p>
-          <label class="check"><input type="checkbox" id="fillrest" checked> 足りない分はおまかせ</label>
-          <label>ひとこと（例: 金曜は外食）<textarea id="picknote" rows="2"></textarea></label>
-          <pre class="req" id="reqtext"></pre>
-          <div class="formfoot"><button class="btn" id="reqcopy" type="button">注文をコピーする</button><button class="btn ghost" id="reqshare" type="button" hidden>共有する</button><button class="btn ghost" id="pickclear" type="button">選び直す</button></div>
-          <p class="hint">コピーした文を、献立を頼むチャットに貼ってください。日持ち・量・取り分けを点検したうえで、献立と買い物リストができます。</p>
-        </div>
       </div>
+    </div>
+
+    <h2>③ 頼む</h2>
+    <div class="form">
+      <label class="check"><input type="checkbox" id="fillrest" checked> 足りない分はおまかせ</label>
+      <label>ひとこと（例: 金曜は外食）<textarea id="picknote" rows="2"></textarea></label>
+      <div class="formfoot"><button class="btn" id="reqsend" type="button">献立を頼む</button><span id="reqmsg"></span></div>
+      <p class="hint">冷蔵庫の写真と、選んだ品の両方をもとに、日持ち・量・取り分けを点検した献立と買い物リストができます。できあがると、このアプリに届きます。①と②は、片方だけでも、どちらも無しでも頼めます。</p>
+      <details><summary>チャットで頼む場合</summary>
+        <pre class="req" id="reqtext"></pre>
+        <div class="formfoot"><button class="btn ghost" id="reqcopy" type="button">注文をコピーする</button><button class="btn ghost" id="reqshare" type="button" hidden>共有する</button></div>
+      </details>
     </div>
   </section>
 
@@ -161,9 +174,10 @@
     <div id="fr-main" hidden>
       <h2>冷蔵庫の写真を送る</h2>
       <div class="form">
-        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送ったら、献立を頼むチャットで「献立を組んで」と伝えます。送った写真は、献立ができたら消します。</p>
+        <p class="hint">冷蔵庫・野菜室・冷凍庫を撮って送ります。何枚でも選べます。送ったら、下の「献立を頼む」へ進みます。送った写真は、献立ができたら消します。</p>
         <label class="btn filebtn">撮る・写真を選ぶ<input type="file" id="photo" accept="image/*" multiple></label>
         <p class="hint" id="fr-count"></p>
+        <div class="formfoot"><button class="btn ghost" data-go="plan" type="button">献立を頼む</button></div>
       </div>
       <div class="shots" id="shots"></div>
       <button class="reset" id="logout">ログアウトする</button>

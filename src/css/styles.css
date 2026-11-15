@@ -155,7 +155,7 @@ footer{color:var(--sub);font-size:11px;margin-top:28px;text-align:center}
 .now{border:2px solid var(--on)}
 .card{padding:14px 14px 13px;min-height:112px}
 .card h4{font-size:16px}
-.pic{width:calc(100% + 28px);margin:-14px -14px 6px;aspect-ratio:1/1}
+.pic{width:100%;margin:0 0 8px;aspect-ratio:4/3;border-radius:14px} /* 写真は切り落とさずに全体を見せ、まわりに余白を取る（寄りすぎに見えないように） */
 .grid{gap:12px}
 .pill{border-radius:999px;padding:9px 18px}
 .btn,.gear,.nonebtn{border-radius:999px}
