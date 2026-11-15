@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.2"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.3"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -18,6 +18,13 @@ function commit(next) {
   }
   state = next;
   return true;
+}
+
+// 開き直すと消えるものがあるか（新しい版へ切り替えてよいかの見きわめ）
+let typed = false; // 文字の欄に何か打ったか（メモ・ログイン・貼り付けなど）
+document.addEventListener("input", (e) => { if (e.target.matches("textarea, input[type=email], input[type=password], input[inputmode=numeric]")) typed = true; });
+function busy() {
+  return typed || pick.ids.size > 0 || needDecided || !!document.querySelector(".shot.busy");
 }
 
 function toast(msg) {
@@ -1006,7 +1013,15 @@ function init() {
     e.target.value = "";
     if (files.length) sendPhotos(files);
   });
-  $("#logout").addEventListener("click", async () => { await C.signOut(); cloudUser = null; pref("household", ""); refreshFridge(); });
+  $("#logout").addEventListener("click", async () => {
+    if (!confirm("ログアウトすると、この端末から週の献立・品の一覧・料理の写真の控えを消します（もう一度ログインすれば取り直せます）。買い物や料理のチェックとメモの記録は残ります。")) return;
+    await C.signOut();
+    cloudUser = null;
+    pref("household", "");
+    commit(M.forgetServerData(state));
+    await C.forgetPhotos();
+    location.reload();
+  });
   refreshFridge();
   // 閉じずに置いておいたアプリに戻ってきたときにも、新しい献立を受け取る（1 分に 1 回まで）
   let lastSeen = Date.now();
@@ -1020,11 +1035,16 @@ function init() {
   const last = pref("tab") === "fridge" ? "plan" : pref("tab"); // 前の版の「冷蔵庫」は「何つくる？」へ
   showTab(M.currentWeek(state) ? last || "menu" : "set");
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-    // 新しい版が届いたら、1 回だけ自動で開き直して新しい画面にする
+    // 新しい版が届いたら、開き直して新しい画面にする。
+    // ただし書きかけ・選びかけ・写真の送信中は、開き直すと消えるので、知らせだけ出して、押したら切り替える
     const had = !!navigator.serviceWorker.controller;
     let reloaded = false;
+    const reload = () => { if (!reloaded) { reloaded = true; location.reload(); } };
+    $("#newver").addEventListener("click", reload);
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (had && !reloaded) { reloaded = true; location.reload(); }
+      if (!had) return;
+      if (busy()) $("#newver").hidden = false;
+      else reload();
     });
     navigator.serviceWorker.register("./service-worker.js").then((r) => r.update()).catch(() => {});
   }

@@ -241,6 +241,27 @@ test("サーバーから来た週は、新しくなったものだけ取り込�
   assert.deepEqual(r.changed, ["2026-11-16"]);
 });
 
+test("ログアウトでは、取り直せるもの（サーバーの週・品の一覧）だけ消え、チェックとメモとファイルの週は残る", () => {
+  let s = M.importBundle(M.emptyState(), { ...bundle(), week_start: "2026-11-09" }); // ファイルから入れた週
+  const row = { week_start: "2026-11-16", updated_at: "t1", bundle: { ...bundle(), memo: "サーバー版" } };
+  s = M.mergeServerWeeks(s, [row], new Date(2026, 10, 18)).state;
+  s = M.mergeServerCatalog(s, { updated_at: "c1", data: cat() }).state;
+  s = M.toggleCheck(s, "2026-11-16", "buy:にんじん", true);
+  s = M.setLog(s, "2026-11-16", { good: "助かった" });
+  const out = M.forgetServerData(s, new Date(2026, 10, 18));
+  assert.deepEqual(Object.keys(M.home(out).weeks), ["2026-11-09"]);
+  assert.equal(M.catalog(out), null);
+  assert.equal(M.home(out).current, "2026-11-09");
+  assert.equal(M.isDone(out, "2026-11-16", "buy:にんじん"), true);
+  assert.equal(M.getLog(out, "2026-11-16").good, "助かった");
+  assert.ok(M.catalog(s)); // もとの状態は書き換えない
+  // もう一度ログインして取り直すと、週もチェックも元どおり
+  const back = M.mergeServerCatalog(M.mergeServerWeeks(out, [row], new Date(2026, 10, 18)).state, { updated_at: "c1", data: cat() }).state;
+  assert.equal(M.home(back).current, "2026-11-16");
+  assert.equal(M.isDone(back, "2026-11-16", "buy:にんじん"), true);
+  assert.ok(M.catalog(back));
+});
+
 test("サーバーから来た品の一覧も、新しくなったときだけ入れ替える", () => {
   let r = M.mergeServerCatalog(M.emptyState(), { updated_at: "c1", data: cat() });
   assert.equal(r.changed, true);

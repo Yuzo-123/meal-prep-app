@@ -87,6 +87,18 @@ export function mergeServerWeeks(state, rows, now = new Date()) {
   return { state: next, changed };
 }
 
+// ログアウトのとき、もう一度ログインすればサーバーから取り直せるもの（サーバーから来た週・品の一覧）だけを消す。
+// 買い物や料理のチェック・メモの記録・ファイルから入れた週は、この端末にしか無いので残す。
+export function forgetServerData(state, now = new Date()) {
+  const next = structuredClone(state);
+  for (const h of Object.values(next.households)) {
+    for (const [k, w] of Object.entries(h.weeks)) if (w.server_updated_at) delete h.weeks[k];
+    delete h.catalog;
+    h.current = Object.keys(h.weeks).length ? pickCurrentWeek(Object.keys(h.weeks), now) : null;
+  }
+  return next;
+}
+
 export function mergeServerCatalog(state, row) {
   const have = catalog(state);
   if (!row || (have && have.server_updated_at === row.updated_at)) return { state, changed: false };

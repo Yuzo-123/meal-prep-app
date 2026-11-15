@@ -74,6 +74,7 @@
     <div id="fr-login">
       <form class="form" id="loginform">
         <p class="hint">献立を頼んだり、冷蔵庫の写真を送ったりするには、家族のログインが要ります。最初の 1 回だけです。</p>
+        <p class="hint">iPhone でホーム画面に置いたときは、ホーム画面から開いたアプリで、もう一度ログインします（Safari で開いたときとは、ログインも保存も別になります）。</p>
         <label>メールアドレス<input id="login-email" type="email" autocomplete="username" inputmode="email" required></label>
         <label>パスワード<input id="login-pass" type="password" autocomplete="current-password" required></label>
         <div class="formfoot"><button class="btn" id="loginbtn" type="submit">ログインする</button><span id="loginmsg"></span></div>
@@ -231,6 +232,7 @@
   <footer id="bookline"></footer>
 </div>
 
+<button type="button" id="newver" class="newver" hidden>新しい版があります。押すと切り替わります</button>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <nav class="tabs"><div>

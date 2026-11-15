@@ -153,6 +153,11 @@ export async function latestRequest(session, household) {
 const PHOTO_CACHE = "mealprep-dish-photos";
 const photoKey = (id) => `./__dish/${encodeURIComponent(id)}.jpg`;
 
+// ログアウトのとき、料理の写真の控えを消す（もう一度ログインすれば取り直せる）
+export async function forgetPhotos() {
+  try { await caches.delete(PHOTO_CACHE); } catch (e) { /* 控えが使えない端末では何もしない */ }
+}
+
 export async function cachedPhotoUrl(id) {
   if (!("caches" in globalThis)) return null;
   const hit = await (await caches.open(PHOTO_CACHE)).match(photoKey(id));
