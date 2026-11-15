@@ -67,6 +67,71 @@ export function stateSize(state) {
   return JSON.stringify(state).length;
 }
 
+// ---------- カテゴリから選ぶ（品の一覧と、lio への注文） ----------
+
+export const CATALOG_FORMAT = "mealprep-catalog";
+export const KINDS = ["作りおき", "帰って10分"];
+export const GROUPS = ["肉", "魚介", "野菜", "卵・豆製品", "ごはん・めん", "スープ"];
+
+export function importCatalog(state, cat) {
+  if (!cat || cat.format !== CATALOG_FORMAT || !Array.isArray(cat.dishes) || !cat.dishes.length) {
+    throw new Error("品の一覧のファイルではありません");
+  }
+  const next = structuredClone(state);
+  home(next).catalog = { book: cat.book || "", exported_at: cat.exported_at || "", dishes: cat.dishes };
+  return next;
+}
+
+export function catalog(state) {
+  return home(state).catalog || null;
+}
+
+// 種類・区分・取り分けで絞る。opts の値が無い項目は絞らない。
+export function filterDishes(dishes, opts = {}) {
+  return dishes.filter((d) =>
+    (!opts.kind || d.kind === opts.kind) &&
+    (!opts.group || d.group === opts.group) &&
+    (!opts.kidOk || !d.kid_caution));
+}
+
+// 次に献立を作る週の月曜。今日が月曜でも「次の」月曜にする（今週ぶんはもう作ってある前提）。
+export function nextMonday(now = new Date()) {
+  const add = ((8 - now.getDay()) % 7) || 7;
+  return iso(new Date(now.getFullYear(), now.getMonth(), now.getDate() + add));
+}
+
+// 注文する週。次の月曜の週がもう取り込んであれば、その次の週にする。
+export function nextPlanWeek(state, now = new Date()) {
+  let week = nextMonday(now);
+  const weeks = home(state).weeks || {};
+  for (let i = 0; i < 8 && weeks[week]; i++) {
+    const [y, m, d] = week.split("-").map(Number);
+    week = iso(new Date(y, m - 1, d + 7));
+  }
+  return week;
+}
+
+// lio に渡す注文。チャットに貼れる文と、機械が読める中身の両方を作る。
+export function buildRequest(state, picks, opts = {}, now = new Date()) {
+  const cat = catalog(state);
+  const byId = new Map((cat ? cat.dishes : []).map((d) => [d.id, d]));
+  const chosen = picks.map((id) => byId.get(id)).filter(Boolean);
+  const week = opts.week_start || nextPlanWeek(state, now);
+  const data = {
+    format: "mealprep-request", version: 1, household: state.household, week_start: week,
+    picks: chosen.map((d) => d.id), fill_rest: opts.fillRest !== false, kid_ok_only: !!opts.kidOk, note: (opts.note || "").trim(),
+  };
+  const lines = [
+    `【献立の注文】${weekSpan(week)} の週`,
+    chosen.length ? "作りたい品:" : "作りたい品: 指定なし（全部おまかせ）",
+    ...chosen.map((d) => `・${d.name}（${d.id}・P.${d.print_page}・${d.kind}）`),
+    `足りない分: ${data.fill_rest ? "lio におまかせ" : "足さない"}`,
+    `取り分け注意の品: ${data.kid_ok_only ? "除く" : "入れてよい"}`,
+  ];
+  if (data.note) lines.push(`ひとこと: ${data.note}`);
+  return { data, text: lines.join("\n") };
+}
+
 // 月〜金の日付。時差でずれないよう、文字から年月日を取り出して作る。
 export function dayDates(weekStart) {
   const [y, m, d] = weekStart.split("-").map(Number);

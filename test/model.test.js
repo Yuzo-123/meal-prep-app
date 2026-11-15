@@ -168,6 +168,55 @@ test("食べた・店に無かったの印は、チェックと別の鍵で残�
   assert.equal(M.isDone(s, wk, M.eatKey("月", "朝", "r1")), true); // 買い物を外しても、食べた印は残る
 });
 
+const cat = () => ({ format: "mealprep-catalog", version: 1, book: "本", dishes: [
+  { id: "r1", name: "煮豚", kind: "作りおき", group: "肉", print_page: 40, kid_caution: false },
+  { id: "r2", name: "麻婆なす", kind: "帰って10分", group: "野菜", print_page: 90, kid_caution: true },
+  { id: "r3", name: "鮭の南蛮漬け", kind: "作りおき", group: "魚介", print_page: 60, kid_caution: false },
+] });
+
+test("品の一覧は種類・区分・取り分けで絞れる", () => {
+  const d = cat().dishes;
+  assert.deepEqual(M.filterDishes(d, { kind: "作りおき" }).map((x) => x.id), ["r1", "r3"]);
+  assert.deepEqual(M.filterDishes(d, { group: "野菜" }).map((x) => x.id), ["r2"]);
+  assert.deepEqual(M.filterDishes(d, { kidOk: true }).map((x) => x.id), ["r1", "r3"]);
+  assert.equal(M.filterDishes(d, {}).length, 3);
+});
+
+test("品の一覧は家庭の区切りの下に入り、違うファイルは断る", () => {
+  const s = M.importCatalog(M.emptyState(), cat());
+  assert.equal(M.catalog(s).dishes.length, 3);
+  assert.equal(M.catalog(M.emptyState()), null);
+  assert.throws(() => M.importCatalog(M.emptyState(), bundle()));
+  assert.throws(() => M.importCatalog(M.emptyState(), { format: "mealprep-catalog", dishes: [] }));
+});
+
+test("次に作る週は、次の月曜から", () => {
+  assert.equal(M.nextMonday(new Date(2026, 10, 15)), "2026-11-16"); // 日曜
+  assert.equal(M.nextMonday(new Date(2026, 10, 16)), "2026-11-23"); // 月曜なら次の月曜
+  assert.equal(M.nextMonday(new Date(2026, 10, 21)), "2026-11-23"); // 土曜
+  assert.equal(M.nextMonday(new Date(2026, 10, 28)), "2026-11-30");
+});
+
+test("次の月曜の週がもう入っていれば、その次の週を注文する", () => {
+  let s = M.importBundle(M.emptyState(), bundle()); // 2026-11-16 の週が入っている
+  assert.equal(M.nextPlanWeek(s, new Date(2026, 10, 15)), "2026-11-23");
+  assert.equal(M.nextPlanWeek(M.emptyState(), new Date(2026, 10, 15)), "2026-11-16");
+});
+
+test("lio への注文は、選んだ品・おまかせ・取り分け・ひとことを文にする", () => {
+  const s = M.importCatalog(M.emptyState(), cat());
+  const r = M.buildRequest(s, ["r1", "r3", "無い番号"], { kidOk: true, note: " 金曜は外食 " }, new Date(2026, 10, 21));
+  assert.deepEqual(r.data.picks, ["r1", "r3"]);
+  assert.equal(r.data.week_start, "2026-11-23");
+  assert.equal(r.data.fill_rest, true);
+  assert.ok(r.text.includes("11/23〜11/27 の週"));
+  assert.ok(r.text.includes("・煮豚（r1・P.40・作りおき）"));
+  assert.ok(r.text.includes("取り分け注意の品: 除く"));
+  assert.ok(r.text.includes("ひとこと: 金曜は外食"));
+  const none = M.buildRequest(s, [], {}, new Date(2026, 10, 21));
+  assert.ok(none.text.includes("指定なし（全部おまかせ）"));
+});
+
 test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");

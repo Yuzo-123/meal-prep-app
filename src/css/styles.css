@@ -11,6 +11,17 @@ header{display:flex;align-items:center;gap:12px;padding:18px 0 14px}
 .mark{width:36px;height:36px;border-radius:10px;background:var(--on);color:var(--onink);display:grid;place-items:center;font-weight:800;font-size:17px;flex:none}
 header h1{font-size:17px;margin:0;letter-spacing:.01em}
 header p{margin:0;color:var(--sub);font-size:12px}
+.btn.wide{display:block;width:100%;margin-top:8px}
+.doors{display:grid;gap:10px}
+.door{border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;text-align:left;border-radius:16px;padding:16px;display:grid;gap:4px;cursor:pointer}
+.door b{font-size:17px}
+.door span{font-size:13px;color:var(--sub)}
+.door.on{border:2px solid var(--on)}
+.check{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0;color:var(--ink)}
+.form .check{display:flex;grid-template-columns:none;font-weight:400}
+.check input{width:20px;height:20px;flex:none}
+.req{margin:0;white-space:pre-wrap;font:13px/1.6 inherit;background:var(--surface);border-radius:10px;padding:10px 12px;max-height:220px;overflow:auto}
+#pickbox{margin-top:16px}
 header .grow{flex:1;min-width:0}
 .gear{border:0;background:var(--surface);color:var(--sub);font:inherit;font-size:12px;font-weight:700;padding:8px 12px;border-radius:10px;min-height:36px;flex:none}
 .shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}

@@ -3,7 +3,7 @@ import * as M from "./model.js";
 import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 
-export const APP_VERSION = "0.5.0"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.6.1"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -290,6 +290,15 @@ function takeIn(text) {
   let obj;
   try { obj = JSON.parse(text); } catch (e) { toast("読めませんでした（ファイルの中身が壊れています）"); return; }
   try {
+    if (obj && obj.format === M.CATALOG_FORMAT) {
+      if (!commit(M.importCatalog(state, obj))) return;
+      toast(`品の一覧を取り込みました（${obj.dishes.length} 品）`);
+      $("#paste").value = "";
+      renderPlan();
+      $("#pickbox").hidden = false;
+      showTab("plan");
+      return;
+    }
     if (obj && obj.format === "mealprep-backup") {
       commit(M.fromBackup(obj));
       toast("書き出しファイルから戻しました");
@@ -319,6 +328,62 @@ function download() {
   a.download = `mealprep-backup-${M.iso(new Date())}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- 献立を作る（入口 2 つと、カテゴリから選ぶ） ----------
+const pick = { kind: M.KINDS[0], group: "", kidOk: false, ids: new Set() };
+
+function renderPlan() {
+  const cat = M.catalog(state);
+  $("#pick-nocat").hidden = !!cat;
+  $("#pick-main").hidden = !cat;
+  if (!cat) return;
+  const pill = (attr, value, label, on) => `<button class="pill${on ? " on" : ""}" data-${attr}="${esc(value)}">${esc(label)}</button>`;
+  $("#kindpills").innerHTML = M.KINDS.map((k) => pill("kind", k, k, pick.kind === k)).join("");
+  $("#grouppills").innerHTML = pill("group", "", "すべて", !pick.group) + M.GROUPS.map((g) => pill("group", g, g, pick.group === g)).join("");
+  $$("#kindpills .pill").forEach((p) => p.addEventListener("click", () => { pick.kind = p.dataset.kind; renderPlan(); }));
+  $$("#grouppills .pill").forEach((p) => p.addEventListener("click", () => { pick.group = p.dataset.group; renderPlan(); }));
+  $("#kidok").checked = pick.kidOk;
+  const shown = M.filterDishes(cat.dishes, { kind: pick.kind, group: pick.group, kidOk: pick.kidOk });
+  $("#pickcount").textContent = `${shown.length} 品を表示中・${pick.ids.size} 品を選択中`;
+  $("#picklist").innerHTML = shown.map((d) => {
+    const keep = d.kind === "作りおき" ? (d.fridge ? `冷蔵 ${d.fridge}` : "") + (d.freezer_ok ? "・冷凍できる" : "") : d.time_min ? `当日 ${d.time_min} 分` : "当日";
+    return `<label class="row${pick.ids.has(d.id) ? " picked" : ""}" data-pick="${esc(d.id)}"><input type="checkbox"${pick.ids.has(d.id) ? " checked" : ""}><span class="box"></span>
+      <span class="body"><b>${esc(d.name)}</b><small>${esc([d.section, keep].filter(Boolean).join("・"))}${d.kid_caution ? `<em>取り分け注意</em>` : ""}</small></span>
+      <span class="amt pg">P.${esc(d.print_page)}</span></label>`;
+  }).join("");
+  $$("#picklist .row").forEach((row) => $("input", row).addEventListener("change", (e) => {
+    if (e.target.checked) pick.ids.add(row.dataset.pick); else pick.ids.delete(row.dataset.pick);
+    $("#pickcount").textContent = `${shown.length} 品を表示中・${pick.ids.size} 品を選択中`;
+    renderRequest();
+  }));
+  renderRequest();
+}
+
+function currentRequest() {
+  return M.buildRequest(state, [...pick.ids], { kidOk: pick.kidOk, fillRest: $("#fillrest").checked, note: $("#picknote").value });
+}
+
+function renderRequest() {
+  const r = currentRequest();
+  $("#pickweek").textContent = `${M.weekSpan(r.data.week_start)} の週の献立を頼みます`;
+  $("#reqtext").textContent = r.text;
+  $("#reqshare").hidden = !navigator.share;
+}
+
+async function copyRequest() {
+  const text = currentRequest().text;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("注文をコピーしました。lio のチャットに貼ってください");
+  } catch (e) {
+    const range = document.createRange();
+    range.selectNodeContents($("#reqtext"));
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    toast("文を選んだ状態にしました。コピーしてください");
+  }
 }
 
 // ---------- 冷蔵庫（ログインと写真の送信） ----------
@@ -425,6 +490,13 @@ function init() {
     renderAll();
   });
   $$("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
+  $("#door-pick").addEventListener("click", () => { $("#pickbox").hidden = false; $("#door-pick").classList.add("on"); renderPlan(); });
+  $("#kidok").addEventListener("change", (e) => { pick.kidOk = e.target.checked; renderPlan(); });
+  $("#fillrest").addEventListener("change", renderRequest);
+  $("#picknote").addEventListener("input", renderRequest);
+  $("#reqcopy").addEventListener("click", copyRequest);
+  $("#reqshare").addEventListener("click", () => navigator.share({ text: currentRequest().text }).catch(() => {}));
+  $("#pickclear").addEventListener("click", () => { pick.ids.clear(); renderPlan(); });
   $("#nowdone").addEventListener("click", (e) => {
     const key = e.currentTarget.dataset.key;
     const w = M.currentWeek(state);
