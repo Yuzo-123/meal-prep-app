@@ -50,3 +50,23 @@ test("アプリのファイルに管理用の鍵が入っていない", () => {
     assert.equal(/service_role/.test(text) && /eyJ[A-Za-z0-9_-]{20,}/.test(text), false, f);
   }
 });
+
+test("ログインの更新でサーバーが不調（5xx）なら、ログイン状態は消さない。断られた（400・401）ときだけ消す", async () => {
+  const mem = {};
+  globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => { mem[k] = String(v); }, removeItem: (k) => { delete mem[k]; } };
+  const realFetch = globalThis.fetch;
+  const old = { access_token: "a", refresh_token: "r", expires_at: 1, user_id: "u1" };
+  try {
+    for (const [status, kept] of [[503, true], [500, true], [400, false], [401, false]]) {
+      mem["mealprep-session-v1"] = JSON.stringify(old);
+      globalThis.fetch = async () => new Response(JSON.stringify({ msg: "x" }), { status });
+      let thrown = false;
+      try { await C.ensureSession(); } catch (e) { thrown = true; }
+      assert.equal(!!C.getSession(), kept, `HTTP ${status}`);
+      assert.equal(thrown, kept, `HTTP ${status} のとき、呼び出し元へ失敗を返すか`);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.localStorage;
+  }
+});

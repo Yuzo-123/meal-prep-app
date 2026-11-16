@@ -74,17 +74,22 @@ export function pickCurrentWeek(weekStarts, now = new Date()) {
 export function mergeServerWeeks(state, rows, now = new Date()) {
   let next = state;
   const changed = [];
+  const skipped = []; // 版が合わない・読めないので取り込めなかった週（画面で知らせる）
   for (const row of [...rows].sort((a, b) => (a.week_start < b.week_start ? -1 : 1))) {
     const have = home(next).weeks[row.week_start];
     if (have && have.server_updated_at === row.updated_at) continue;
-    next = importBundle(next, { ...row.bundle, household: next.household, server_updated_at: row.updated_at });
-    changed.push(row.week_start);
+    try {
+      next = importBundle(next, { ...row.bundle, household: next.household, server_updated_at: row.updated_at });
+      changed.push(row.week_start);
+    } catch (e) {
+      skipped.push(row.week_start);
+    }
   }
   if (changed.length) {
     next = structuredClone(next);
     home(next).current = pickCurrentWeek(Object.keys(home(next).weeks), now);
   }
-  return { state: next, changed };
+  return { state: next, changed, skipped };
 }
 
 // ログアウトのとき、もう一度ログインすればサーバーから取り直せるもの（サーバーから来た週・品の一覧）だけを消す。
@@ -102,7 +107,8 @@ export function forgetServerData(state, now = new Date()) {
 export function mergeServerCatalog(state, row) {
   const have = catalog(state);
   if (!row || (have && have.server_updated_at === row.updated_at)) return { state, changed: false };
-  const next = importCatalog(state, row.data);
+  let next;
+  try { next = importCatalog(state, row.data); } catch (e) { return { state, changed: false, skipped: true }; }
   home(next).catalog.server_updated_at = row.updated_at;
   return { state: next, changed: true };
 }

@@ -9,19 +9,21 @@
 <meta name="apple-mobile-web-app-title" content="日曜につくりおき">
 <meta name="robots" content="noindex">
 <title>日曜につくりおき</title>
+<!-- 守りの設定。外から読み込むものは無い。サーバーとのやりとりは Supabase だけ。見た目の直書き（段取りの時間の帯の位置）だけは許す -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://lhiwkgzlajonpxjuwctb.supabase.co; connect-src 'self' https://lhiwkgzlajonpxjuwctb.supabase.co; manifest-src 'self'; worker-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
 <link rel="stylesheet" href="src/css/styles.css">
 </head>
 <body>
 <div class="cover" id="cover" hidden>
-  <img class="covermascot" src="icons/mascot.png" alt="" onerror="this.remove()">
+  <img class="covermascot" src="icons/mascot.png" alt="">
   <p class="covername">日曜につくりおき</p>
   <p class="coversub">日曜にまとめて作って、平日をらくに</p>
 </div>
 <div class="wrap">
   <header>
-    <div class="mark"><span>作</span><img src="icons/mascot.png" alt="" onload="this.parentNode.classList.add('face')" onerror="this.remove()"></div>
+    <div class="mark"><span>作</span><img src="icons/mascot.png" alt=""></div>
     <div class="grow"><h1>日曜につくりおき</h1><p id="headline"></p></div>
     <button class="gear" data-go="set" aria-label="設定">設定</button>
   </header>

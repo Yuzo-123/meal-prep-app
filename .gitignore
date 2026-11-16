@@ -4,3 +4,6 @@ app_week*.json
 app_catalog*.json
 mealprep-backup-*.json
 *.week.json
+
+# 端末ごとのメモ（公開しない）
+CLAUDE.local.md

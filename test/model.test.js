@@ -226,6 +226,18 @@ test("表示する週は、今日を含む週。土日は次の月曜の週。�
   assert.equal(M.pickCurrentWeek([], new Date()), null);
 });
 
+test("サーバーの週や品の一覧が読めない形なら、ほかの週は取り込み、読めなかったものを返す", () => {
+  const good = { week_start: "2026-11-16", updated_at: "t1", bundle: bundle() };
+  const bad = { week_start: "2026-11-23", updated_at: "t1", bundle: { ...bundle(), week_start: "2026-11-23", version: 2 } };
+  const r = M.mergeServerWeeks(M.emptyState(), [bad, good], new Date(2026, 10, 18));
+  assert.deepEqual(r.changed, ["2026-11-16"]);
+  assert.deepEqual(r.skipped, ["2026-11-23"]);
+  const c = M.mergeServerCatalog(r.state, { updated_at: "c1", data: { format: "別のもの" } });
+  assert.equal(c.changed, false);
+  assert.equal(c.skipped, true);
+  assert.equal(c.state, r.state);
+});
+
 test("サーバーから来た週は、新しくなったものだけ取り込み、チェックは残る", () => {
   let s = M.importBundle(M.emptyState(), bundle());
   s = M.toggleCheck(s, "2026-11-16", "buy:にんじん", true);

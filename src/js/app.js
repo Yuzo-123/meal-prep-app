@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.3"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.4"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -27,12 +27,29 @@ function busy() {
   return typed || pick.ids.size > 0 || needDecided || !!document.querySelector(".shot.busy");
 }
 
-function toast(msg) {
+// 知らせを数秒出す。undo を渡すと「元に戻す」を付け、少し長めに出す
+function toast(msg, undo) {
   const t = $("#toast");
   t.textContent = msg;
+  if (undo) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "toastbtn";
+    b.textContent = "元に戻す";
+    b.addEventListener("click", () => { undo(); t.classList.remove("on", "act"); });
+    t.append(b);
+  }
+  t.classList.toggle("act", !!undo);
   t.classList.add("on");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove("on"), 2600);
+  toast.timer = setTimeout(() => t.classList.remove("on", "act"), undo ? 6000 : 2600);
+}
+
+// キャラクターの絵: 読めたら顔を出し、読めなければ外す（画面のファイルに動きを直書きしないため、ここで付ける）
+function mascot(img, onOk) {
+  const done = () => { if (img.naturalWidth) { if (onOk) onOk(); } else img.remove(); };
+  if (img.complete) done();
+  else { img.addEventListener("load", done); img.addEventListener("error", () => img.remove()); }
 }
 
 // ---------- タブ ----------
@@ -133,6 +150,10 @@ async function syncFromServer() {
       if (!$("#pickbox").hidden) renderPlan();
       if (w.changed.length) toast("新しい献立を受け取りました");
       loadLastRequest();
+    }
+    // 届いたのに読めないものがあれば知らせる（アプリが古いと、新しい形のデータを読めない）
+    if (w.skipped.length || c.skipped) {
+      toast(`${w.skipped.length ? w.skipped.map((k) => M.weekSpan(k)).join("・") + " の献立" : "品の一覧"}を読めませんでした。アプリを開き直して、新しい版にしてください`);
     }
     const cur = M.currentWeek(state);
     if (cur) await C.cachePhotos(session, household, M.photoIds(cur), hydratePhotos);
@@ -962,8 +983,16 @@ function init() {
   $$("[data-reset]").forEach((b) => b.addEventListener("click", () => {
     const w = M.currentWeek(state);
     if (!w) return;
-    commit(M.clearChecks(state, w.week_start, b.dataset.reset.split(",")));
+    const week = w.week_start;
+    const saved = structuredClone(M.home(state).checks[week] || {});
+    commit(M.clearChecks(state, week, b.dataset.reset.split(",")));
     refreshChecks();
+    toast("チェックを外しました", () => {
+      const next = structuredClone(state);
+      M.home(next).checks[week] = saved;
+      commit(next);
+      refreshChecks();
+    });
   }));
   $("#logsave").addEventListener("click", saveLog);
   $("#file").addEventListener("change", async (e) => {
@@ -1031,6 +1060,10 @@ function init() {
     lastSeen = Date.now();
     refreshFridge();
   });
+  const cm = $(".covermascot");
+  if (cm) mascot(cm);
+  const mk = $(".mark img");
+  if (mk) mascot(mk, () => mk.parentNode.classList.add("face"));
   renderAll();
   const last = pref("tab") === "fridge" ? "plan" : pref("tab"); // 前の版の「冷蔵庫」は「何つくる？」へ
   showTab(M.currentWeek(state) ? last || "menu" : "set");

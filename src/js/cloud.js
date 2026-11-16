@@ -101,8 +101,10 @@ export async function ensureSession() {
     setSession(s);
     return s;
   } catch (e) {
-    if (e.status) { setSession(null); return null; } // サーバーに断られた＝ログインし直し
-    throw e; // 電波が無いだけなら、ログイン状態は消さない
+    // 断られた（400・401＝更新の札が古い・取り消された）ときだけ、ログインし直し。
+    // サーバーの不調（5xx など）や電波が無いだけなら、ログイン状態は消さない
+    if (e.status === 400 || e.status === 401) { setSession(null); return null; }
+    throw e;
   }
 }
 
