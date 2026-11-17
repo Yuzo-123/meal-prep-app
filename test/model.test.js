@@ -274,6 +274,14 @@ test("ログアウトでは、取り直せるもの（サーバーの週・品�
   assert.ok(M.catalog(back));
 });
 
+test("前に受け取ったときの印は、サーバーから来た週と品の一覧のぶんだけ出す（ファイルの週は出さない）", () => {
+  let s = M.importBundle(M.emptyState(), { ...bundle(), week_start: "2026-11-09" });
+  assert.deepEqual(M.serverStamps(s), { weeks: {}, catalog: null });
+  s = M.mergeServerWeeks(s, [{ week_start: "2026-11-16", updated_at: "t1", bundle: bundle() }], new Date(2026, 10, 18)).state;
+  s = M.mergeServerCatalog(s, { updated_at: "c1", data: cat() }).state;
+  assert.deepEqual(M.serverStamps(s), { weeks: { "2026-11-16": "t1" }, catalog: "c1" });
+});
+
 test("サーバーから来た品の一覧も、新しくなったときだけ入れ替える", () => {
   let r = M.mergeServerCatalog(M.emptyState(), { updated_at: "c1", data: cat() });
   assert.equal(r.changed, true);

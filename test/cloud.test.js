@@ -3,15 +3,89 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as C from "../src/js/cloud.js";
 
-test("写真の置き場所は 家庭/日付/時刻-乱数.jpg になる", () => {
-  const p = C.photoPath("home", new Date(2026, 10, 14, 9, 5, 7), "abc123");
-  assert.equal(p, "home/2026-11-14/090507-abc123.jpg");
+test("写真の置き場所は 家庭/日付/写真の指紋.jpg になる", () => {
+  const p = C.photoPath("home", "0123456789abcdef", new Date(2026, 10, 14, 9, 5, 7));
+  assert.equal(p, "home/2026-11-14/0123456789abcdef.jpg");
 });
 
-test("家庭の名前に変な文字が入っていたら置き場所を作らない", () => {
-  assert.throws(() => C.photoPath("../other"));
-  assert.throws(() => C.photoPath(""));
-  assert.throws(() => C.photoPath(null));
+test("家庭の名前や指紋に変な文字が入っていたら置き場所を作らない", () => {
+  assert.throws(() => C.photoPath("../other", "0123456789abcdef"));
+  assert.throws(() => C.photoPath("", "0123456789abcdef"));
+  assert.throws(() => C.photoPath(null, "0123456789abcdef"));
+  assert.throws(() => C.photoPath("home", "../x"));
+  assert.throws(() => C.photoPath("home", ""));
+});
+
+test("同じ写真なら同じ指紋、違う写真なら違う指紋になる", async () => {
+  const a = await C.photoHash(new Blob([new Uint8Array([1, 2, 3])]));
+  assert.equal(a, await C.photoHash(new Blob([new Uint8Array([1, 2, 3])])));
+  assert.notEqual(a, await C.photoHash(new Blob([new Uint8Array([1, 2, 4])])));
+  assert.match(a, /^[0-9a-f]{16}$/);
+});
+
+// サーバーの代わりに、決まった返事を返す fetch。呼ばれた URL と方法を控える。
+function fakeServer(reply) {
+  const calls = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, opt = {}) => {
+    const c = { url: String(url), method: opt.method || "GET", headers: opt.headers || {}, body: opt.body };
+    calls.push(c);
+    const [status, json] = reply(c);
+    return new Response(json === undefined ? "" : JSON.stringify(json), { status });
+  };
+  return { calls, restore: () => { globalThis.fetch = real; } };
+}
+const session = { access_token: "t" };
+
+test("写真を送り直して置き場が「もうある」（HTTP 400 の中の 409）と返したら、成功として扱う", async () => {
+  const s = fakeServer(() => [400, { statusCode: "409", error: "Duplicate", message: "The resource already exists" }]);
+  try {
+    assert.equal(await C.uploadPhoto(session, "home/2026-11-17/0123456789abcdef.jpg", new Blob(["x"])), "home/2026-11-17/0123456789abcdef.jpg");
+  } finally { s.restore(); }
+  const t = fakeServer(() => [400, { statusCode: "400", error: "InvalidJWT", message: "bad" }]);
+  try {
+    await assert.rejects(C.uploadPhoto(session, "home/2026-11-17/0123456789abcdef.jpg", new Blob(["x"])));
+  } finally { t.restore(); }
+});
+
+test("注文は画面で決めた番号で送り、もう入っていたら（空の返事）その注文を読み直して返す", async () => {
+  const s = fakeServer((c) => c.method === "POST" ? [201, []] : [200, [{ id: "req-1", status: "working", week_start: "2026-11-23" }]]);
+  try {
+    const row = await C.sendRequest(session, "home", { week_start: "2026-11-23", text: "x" }, "req-1");
+    assert.equal(row.status, "working");
+    const post = s.calls[0];
+    assert.match(post.url, /on_conflict=id/);
+    assert.match(post.headers.Prefer, /resolution=ignore-duplicates/);
+    assert.equal(JSON.parse(post.body).id, "req-1");
+    assert.match(s.calls[1].url, /id=eq\.req-1/);
+  } finally { s.restore(); }
+});
+
+test("週は印だけ先に取り、変わった週だけ中身を取りに行く", async () => {
+  const stamps = [{ week_start: "2026-11-30", updated_at: "B2" }, { week_start: "2026-11-23", updated_at: "A" }];
+  const s = fakeServer((c) => /bundle/.test(c.url) ? [200, [{ week_start: "2026-11-30", updated_at: "B2", bundle: {} }]] : [200, stamps]);
+  try {
+    const rows = await C.fetchWeeks(session, "home", { "2026-11-30": "B1", "2026-11-23": "A" });
+    assert.equal(rows.length, 1);
+    assert.equal(s.calls.length, 2);
+    assert.doesNotMatch(s.calls[0].url, /bundle/);
+    assert.match(s.calls[1].url, /week_start=in\.\(2026-11-30\)/);
+  } finally { s.restore(); }
+  const t = fakeServer(() => [200, stamps]);
+  try {
+    assert.deepEqual(await C.fetchWeeks(session, "home", { "2026-11-30": "B2", "2026-11-23": "A" }), []);
+    assert.equal(t.calls.length, 1, "変わっていなければ中身は取りに行かない");
+  } finally { t.restore(); }
+});
+
+test("品の一覧は、印が前と同じなら中身を取りに行かない", async () => {
+  const s = fakeServer((c) => /data/.test(c.url) ? [200, [{ updated_at: "N", data: { dishes: [] } }]] : [200, [{ updated_at: "N" }]]);
+  try {
+    assert.equal(await C.fetchCatalog(session, "home", "N"), null);
+    assert.equal(s.calls.length, 1);
+    assert.equal((await C.fetchCatalog(session, "home", "OLD")).updated_at, "N");
+    assert.equal((await C.fetchCatalog(session, "home", null)).updated_at, "N");
+  } finally { s.restore(); }
 });
 
 test("ログインの期限は、残り 60 秒を切ったら更新が要る", () => {

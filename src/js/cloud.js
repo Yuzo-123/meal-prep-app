@@ -16,10 +16,23 @@ export function dayFolder(now = new Date()) {
   return `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
 }
 
-// 置く場所は「<家庭>/<日付>/<時刻>-<乱数>.jpg」。先頭のフォルダ名でサーバー側が家庭を見分ける。
-export function photoPath(household, now = new Date(), id = Math.random().toString(36).slice(2, 8)) {
+// 置く場所は「<家庭>/<日付>/<写真の指紋>.jpg」。先頭のフォルダ名でサーバー側が家庭を見分ける。
+// 名前を写真の中身から決めるので、同じ日に同じ写真を送り直しても 2 枚にならない。
+export function photoPath(household, hash, now = new Date()) {
   if (!/^[a-z0-9_-]+$/.test(household || "")) throw new Error("家庭の名前が正しくありません");
-  return `${household}/${dayFolder(now)}/${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}-${id}.jpg`;
+  if (!/^[0-9a-f]{8,64}$/.test(hash || "")) throw new Error("写真の名前が正しくありません");
+  return `${household}/${dayFolder(now)}/${hash}.jpg`;
+}
+
+// 写真の指紋（元のファイルの SHA-256 の先頭 16 文字）
+export async function photoHash(file) {
+  const buf = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(buf)].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// 置き場が「もうある」と返したか（Supabase は HTTP 400 の中に statusCode "409"・error "Duplicate" を入れて返す。2026-11-17 に確認）
+export function isDuplicate(err) {
+  return !!err && (err.status === 409 || String(err.code) === "409" || err.code === "KeyAlreadyExists" || err.error === "Duplicate");
 }
 
 // ログインの期限が切れそうか（残り 60 秒を切ったら更新する）
@@ -72,6 +85,7 @@ async function call(path, { method = "GET", body, token, type = "application/jso
   if (!res.ok) {
     const err = new Error((json && (json.msg || json.message || json.error_description || json.error)) || "HTTP " + res.status);
     err.status = res.status;
+    if (json) { err.code = json.statusCode || json.code; err.error = json.error; }
     throw err;
   }
   return json;
@@ -122,27 +136,45 @@ export async function myHousehold(session) {
 
 // ---------- 献立・品の一覧・料理の写真を受け取る ----------
 
-export async function fetchWeeks(session, household, limit = 3) {
-  return (await call(`/rest/v1/weeks?select=week_start,updated_at,bundle&household=eq.${encodeURIComponent(household)}&order=week_start.desc&limit=${limit}`,
+// 先に週ごとの印（updated_at）だけを取り、前に受け取ったものと変わった週だけ中身を取りに行く。
+// known は { 週の始まり: 前に受け取ったときの updated_at }。戻り値は中身つきの行（変わった週だけ）。
+export async function fetchWeeks(session, household, known = {}, limit = 3) {
+  const hh = encodeURIComponent(household);
+  const stamps = (await call(`/rest/v1/weeks?select=week_start,updated_at&household=eq.${hh}&order=week_start.desc&limit=${limit}`,
+    { token: session.access_token })) || [];
+  const stale = stamps.filter((r) => known[r.week_start] !== r.updated_at).map((r) => r.week_start);
+  if (!stale.length) return [];
+  return (await call(`/rest/v1/weeks?select=week_start,updated_at,bundle&household=eq.${hh}&week_start=in.(${stale.map(encodeURIComponent).join(",")})`,
     { token: session.access_token })) || [];
 }
 
-export async function fetchCatalog(session, household) {
-  const rows = await call(`/rest/v1/catalogs?select=updated_at,data&household=eq.${encodeURIComponent(household)}`, { token: session.access_token });
+// 品の一覧も同じ。印が前と同じなら中身（約 800 KB）は取らず null を返す。
+export async function fetchCatalog(session, household, knownUpdatedAt = null) {
+  const hh = encodeURIComponent(household);
+  const stamp = await call(`/rest/v1/catalogs?select=updated_at&household=eq.${hh}`, { token: session.access_token });
+  if (!stamp || !stamp.length || (knownUpdatedAt && stamp[0].updated_at === knownUpdatedAt)) return null;
+  const rows = await call(`/rest/v1/catalogs?select=updated_at,data&household=eq.${hh}`, { token: session.access_token });
   return rows && rows.length ? rows[0] : null;
 }
 
 // ---------- 献立を頼む（注文をサーバーに置く。組むのは Mac 側） ----------
 
-export async function sendRequest(session, household, data) {
+// id は画面が注文を作ったときに 1 回だけ決める番号。返事だけ落ちて送り直しても、同じ番号なら 2 件目は入らない。
+export async function sendRequest(session, household, data, id = crypto.randomUUID()) {
   const { week_start, ...payload } = data;
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/requests`, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/requests?on_conflict=id`, {
     method: "POST",
-    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": "application/json", Prefer: "return=representation" },
-    body: JSON.stringify({ household, week_start, payload }),
+    headers: { apikey: SUPABASE_KEY, Authorization: "Bearer " + session.access_token, "Content-Type": "application/json",
+      Prefer: "return=representation,resolution=ignore-duplicates" },
+    body: JSON.stringify({ id, household, week_start, payload }),
   }).catch(() => { throw new Error("サーバーにつながりません（電波を確かめてください）"); });
   if (!res.ok) throw new Error(res.status === 404 ? "頼む仕組みが、まだサーバーに入っていません" : "頼めませんでした（HTTP " + res.status + "）");
-  return (await res.json())[0];
+  const rows = await res.json();
+  if (rows && rows.length) return rows[0];
+  // もう届いていた（前の送信が入っていた）。その注文を読み直して返す
+  const again = await call(`/rest/v1/requests?select=*&id=eq.${encodeURIComponent(id)}`, { token: session.access_token });
+  if (!again || !again.length) throw new Error("頼めたか確かめられませんでした。少し待ってから、もう一度押してください");
+  return again[0];
 }
 
 export async function latestRequest(session, household) {
@@ -222,9 +254,13 @@ export async function shrink(file, max = 1600, quality = 0.8) {
   return blob;
 }
 
-export async function uploadPhoto(session, household, blob) {
-  const path = photoPath(household);
-  await call(`/storage/v1/object/${BUCKET}/${path}`, { method: "POST", token: session.access_token, body: blob, type: "image/jpeg" });
+// path は写真を選んだときに photoPath で 1 回だけ決める。「もうある」と返されたら、前の送信が届いていたので成功とする。
+export async function uploadPhoto(session, path, blob) {
+  try {
+    await call(`/storage/v1/object/${BUCKET}/${path}`, { method: "POST", token: session.access_token, body: blob, type: "image/jpeg" });
+  } catch (e) {
+    if (!isDuplicate(e)) throw e;
+  }
   return path;
 }
 

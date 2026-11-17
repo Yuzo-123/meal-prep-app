@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.4"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.5"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -143,8 +143,9 @@ async function syncFromServer() {
   syncing = true;
   try {
     const { session, household } = cloudUser;
-    const w = M.mergeServerWeeks(state, await C.fetchWeeks(session, household));
-    const c = M.mergeServerCatalog(w.state, await C.fetchCatalog(session, household));
+    const known = M.serverStamps(state); // 前に受け取ったときの印。変わったものだけ中身を取りに行く
+    const w = M.mergeServerWeeks(state, await C.fetchWeeks(session, household, known.weeks));
+    const c = M.mergeServerCatalog(w.state, await C.fetchCatalog(session, household, known.catalog));
     if ((w.changed.length || c.changed) && commit(c.state)) {
       renderAll();
       if (!$("#pickbox").hidden) renderPlan();
@@ -733,6 +734,7 @@ function currentRequest() {
 
 let photosToday = 0;   // 今日送った冷蔵庫の写真の枚数（冷蔵庫タブで数えたもの）
 let lastRequest = null; // サーバーにある、いちばん新しい注文
+let pendingReq = null;  // 送りかけの注文の番号。届いたか分からずに押し直したとき、同じ中身なら同じ番号で送る（2 件にしない）
 
 function renderRequest() {
   renderNeeds();
@@ -818,7 +820,11 @@ async function sendRequest() {
       }
       try { draft = P.autoPlan(state, [...pick.ids], { need, fillRest: $("#fillrest").checked }); } catch (e) { draft = null; }
     }
-    lastRequest = await C.sendRequest(session, cloudUser.household, { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text, ...(draft ? { draft } : {}) });
+    const data = { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text };
+    const key = JSON.stringify(data);
+    if (!pendingReq || pendingReq.key !== key) pendingReq = { key, id: crypto.randomUUID() };
+    lastRequest = await C.sendRequest(session, cloudUser.household, { ...data, ...(draft ? { draft } : {}) }, pendingReq.id);
+    pendingReq = null;
     if (draft) lastRequest.draft = draft;
     $("#reqmsg").textContent = "";
     $("#picknote").value = "";
@@ -901,25 +907,35 @@ async function doLogin(e) {
   btn.disabled = false;
 }
 
+// 写真 1 枚を送る。置き場の名前（path）は写真を選んだときに 1 回だけ決め、送り直しでも同じ名前を使う。
+async function sendShot(box, f, job) {
+  box.className = "shot busy";
+  $("span", box).textContent = "送信中";
+  try {
+    const session = await C.ensureSession();
+    if (!session) { await refreshFridge(); toast("ログインし直してください"); box.remove(); return false; }
+    if (!job.path) job.path = C.photoPath(cloudUser.household, await C.photoHash(f));
+    if (!job.blob) job.blob = await C.shrink(f);
+    await C.uploadPhoto(session, job.path, job.blob);
+    box.className = "shot";
+    $("span", box).textContent = "送信済み";
+    box.onclick = null;
+  } catch (err) {
+    box.className = "shot fail";
+    $("span", box).textContent = "送れませんでした（押すと送り直す）";
+    box.onclick = async () => { if (await sendShot(box, f, job) !== false) refreshFridge(); };
+    toast(err.message);
+  }
+  return true;
+}
+
 async function sendPhotos(files) {
   for (const f of files) {
     const box = document.createElement("div");
-    box.className = "shot busy";
-    box.innerHTML = `<img alt=""><span>送信中</span>`;
+    box.innerHTML = `<img alt=""><span></span>`;
     $("img", box).src = URL.createObjectURL(f);
     $("#shots").prepend(box);
-    try {
-      const session = await C.ensureSession();
-      if (!session) { await refreshFridge(); toast("ログインし直してください"); box.remove(); return; }
-      const blob = await C.shrink(f);
-      await C.uploadPhoto(session, cloudUser.household, blob);
-      box.className = "shot";
-      $("span", box).textContent = "送信済み";
-    } catch (err) {
-      box.className = "shot fail";
-      $("span", box).textContent = "送れませんでした";
-      toast(err.message);
-    }
+    if (await sendShot(box, f, {}) === false) return;
   }
   refreshFridge();
 }

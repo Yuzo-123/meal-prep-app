@@ -104,6 +104,15 @@ export function forgetServerData(state, now = new Date()) {
   return next;
 }
 
+// 前にサーバーから受け取ったときの印（updated_at）。中身を取りに行く前に、変わったかだけを比べるのに使う。
+export function serverStamps(state) {
+  const h = home(state);
+  const weeks = {};
+  for (const [k, w] of Object.entries(h.weeks)) if (w.server_updated_at) weeks[k] = w.server_updated_at;
+  const c = catalog(state);
+  return { weeks, catalog: c && c.server_updated_at ? c.server_updated_at : null };
+}
+
 export function mergeServerCatalog(state, row) {
   const have = catalog(state);
   if (!row || (have && have.server_updated_at === row.updated_at)) return { state, changed: false };
