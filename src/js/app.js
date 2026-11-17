@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.7"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.8"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -1160,7 +1160,7 @@ function init() {
   });
   $("#logout").addEventListener("click", async () => {
     if (!(await ask({ title: "ログアウトしますか？",
-      body: "この端末から、週の献立・品の一覧・料理の写真の控えを消します（もう一度ログインすれば取り直せます）。買い物や料理のチェックとメモの記録は残ります。",
+      body: "この端末から、週の献立・品の一覧・料理の写真の控えを消します（もう一度ログインすれば取り直せます）。買い物や料理のチェックとメモの記録は残ります。サーバーに送った注文や写真は、ログアウトでは消えません。",
       ok: "ログアウトする", no: "やめる" }))) return;
     await C.signOut();
     cloudUser = null;

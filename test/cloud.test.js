@@ -16,7 +16,7 @@ test("家庭の名前や指紋に変な文字が入っていたら置き場所�
   assert.throws(() => C.photoPath("home", ""));
 });
 
-test("同じ写真なら同じ指紋、違う写真なら違う指紋になる", async () => {
+test("R-20 同じ写真なら同じ指紋、違う写真なら違う指紋になる", async () => {
   const a = await C.photoHash(new Blob([new Uint8Array([1, 2, 3])]));
   assert.equal(a, await C.photoHash(new Blob([new Uint8Array([1, 2, 3])])));
   assert.notEqual(a, await C.photoHash(new Blob([new Uint8Array([1, 2, 4])])));
@@ -37,7 +37,7 @@ function fakeServer(reply) {
 }
 const session = { access_token: "t" };
 
-test("写真を送り直して置き場が「もうある」（HTTP 400 の中の 409）と返したら、成功として扱う", async () => {
+test("R-20 写真を送り直して置き場が「もうある」（HTTP 400 の中の 409）と返したら、成功として扱う", async () => {
   const s = fakeServer(() => [400, { statusCode: "409", error: "Duplicate", message: "The resource already exists" }]);
   try {
     assert.equal(await C.uploadPhoto(session, "home/2026-11-17/0123456789abcdef.jpg", new Blob(["x"])), "home/2026-11-17/0123456789abcdef.jpg");
@@ -48,7 +48,7 @@ test("写真を送り直して置き場が「もうある」（HTTP 400 の中�
   } finally { t.restore(); }
 });
 
-test("注文は画面で決めた番号で送り、もう入っていたら（空の返事）その注文を読み直して返す", async () => {
+test("R-20 注文は画面で決めた番号で送り、もう入っていたら（空の返事）その注文を読み直して返す", async () => {
   const s = fakeServer((c) => c.method === "POST" ? [201, []] : [200, [{ id: "req-1", status: "working", week_start: "2026-11-23" }]]);
   try {
     const row = await C.sendRequest(session, "home", { week_start: "2026-11-23", text: "x" }, "req-1");
@@ -61,7 +61,7 @@ test("注文は画面で決めた番号で送り、もう入っていたら（�
   } finally { s.restore(); }
 });
 
-test("週は印だけ先に取り、変わった週だけ中身を取りに行く", async () => {
+test("R-22 週は印だけ先に取り、変わった週だけ中身を取りに行く", async () => {
   const stamps = [{ week_start: "2026-11-30", updated_at: "B2" }, { week_start: "2026-11-23", updated_at: "A" }];
   const s = fakeServer((c) => /bundle/.test(c.url) ? [200, [{ week_start: "2026-11-30", updated_at: "B2", bundle: {} }]] : [200, stamps]);
   try {
@@ -78,7 +78,7 @@ test("週は印だけ先に取り、変わった週だけ中身を取りに行�
   } finally { t.restore(); }
 });
 
-test("品の一覧は、印が前と同じなら中身を取りに行かない", async () => {
+test("R-22 品の一覧は、印が前と同じなら中身を取りに行かない", async () => {
   const s = fakeServer((c) => /data/.test(c.url) ? [200, [{ updated_at: "N", data: { dishes: [] } }]] : [200, [{ updated_at: "N" }]]);
   try {
     assert.equal(await C.fetchCatalog(session, "home", "N"), null);
@@ -101,13 +101,13 @@ test("写真は長いほうの辺を 1600 に縮め、小さい写真は大き�
   assert.deepEqual(C.fitSize(800, 600), { w: 800, h: 600 });
 });
 
-test("端末に残すログイン状態にメールアドレスを入れない", () => {
+test("R-13 端末に残すログイン状態にメールアドレスを入れない", () => {
   const s = C.keepSession({ access_token: "a", refresh_token: "r", expires_at: 123, user: { id: "u1", email: "someone@example.com" } });
   assert.deepEqual(Object.keys(s).sort(), ["access_token", "expires_at", "refresh_token", "user_id"]);
   assert.equal(JSON.stringify(s).includes("example.com"), false);
 });
 
-test("画面に出る文言に、作り手の呼び名（lio）を出さない", () => {
+test("R-32 画面に出る文言に、作り手の呼び名（lio）を出さない", () => {
   // 2026-11-15 の Yuzo の指示。画面の骨組みと画面の動きのファイルを見る（計算の部品は、文字として書いた所だけ）
   for (const f of ["../index.html", "../src/js/app.js", "../manifest.json"]) {
     assert.equal(/lio/i.test(readFileSync(new URL(f, import.meta.url), "utf8")), false, f);
@@ -117,7 +117,7 @@ test("画面に出る文言に、作り手の呼び名（lio）を出さない",
   assert.deepEqual(strings.filter((s) => /lio/i.test(s)), []);
 });
 
-test("アプリのファイルに管理用の鍵が入っていない", () => {
+test("R-32 アプリのファイルに管理用の鍵が入っていない", () => {
   for (const f of ["../src/js/cloud.js", "../src/js/app.js", "../index.html", "../service-worker.js", "../tools/check_rules.py"]) {
     const text = readFileSync(new URL(f, import.meta.url), "utf8");
     assert.equal(/sb_secret_[A-Za-z0-9_-]{8,}/.test(text), false, f);
@@ -125,7 +125,7 @@ test("アプリのファイルに管理用の鍵が入っていない", () => {
   }
 });
 
-test("ログインの更新でサーバーが不調（5xx）なら、ログイン状態は消さない。断られた（400・401）ときだけ消す", async () => {
+test("R-23 ログインの更新でサーバーが不調（5xx）なら、ログイン状態は消さない。断られた（400・401）ときだけ消す", async () => {
   const mem = {};
   globalThis.localStorage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => { mem[k] = String(v); }, removeItem: (k) => { delete mem[k]; } };
   const realFetch = globalThis.fetch;
@@ -145,7 +145,7 @@ test("ログインの更新でサーバーが不調（5xx）なら、ログイ�
   }
 });
 
-test("失敗の文は、使う人の言葉にする（アプリの日本語はそのまま、サーバーの英語や番号は出さない）", () => {
+test("R-24 失敗の文は、使う人の言葉にする（アプリの日本語はそのまま、サーバーの英語や番号は出さない）", () => {
   assert.equal(C.friendlyError(new Error("サーバーにつながりません（電波を確かめてください）")), "サーバーにつながりません（電波を確かめてください）");
   const e401 = Object.assign(new Error("JWT expired"), { status: 401 });
   assert.match(C.friendlyError(e401), /ログインし直して/);
@@ -155,14 +155,14 @@ test("失敗の文は、使う人の言葉にする（アプリの日本語は�
   assert.match(C.friendlyError(null), /もう一度試して/);
 });
 
-test("同じ週の注文が組まれている途中（409）なら、待ってほしいと伝える", async () => {
+test("R-21 同じ週の注文が組まれている途中（409）なら、待ってほしいと伝える", async () => {
   const s = fakeServer(() => [409, { code: "23505", message: "duplicate key value violates unique constraint" }]);
   try {
     await assert.rejects(C.sendRequest(session, "home", { week_start: "2026-11-23" }, "req-2"), /いま組んでいるところ/);
   } finally { s.restore(); }
 });
 
-test("作り直しの取り消しは、手付かず（new）の注文だけを cancelled にする", async () => {
+test("R-21 作り直しの取り消しは、手付かず（new）の注文だけを cancelled にする", async () => {
   const s = fakeServer(() => [200, [{ id: "req-1", status: "cancelled" }]]);
   try {
     assert.equal(await C.cancelRequest(session, "req-1"), true);
@@ -178,13 +178,13 @@ test("作り直しの取り消しは、手付かず（new）の注文だけを c
   } finally { t.restore(); }
 });
 
-test("画面の版の番号（APP_VERSION）と控えの番号（CACHE）がそろっている", () => {
+test("R-30 画面の版の番号（APP_VERSION）と控えの番号（CACHE）がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8").match(/APP_VERSION = "([\d.]+)"/)[1];
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8").match(/mealprep-([\d.]+)/)[1];
   assert.equal(app, sw);
 });
 
-test("画面に、ブラウザの「OK／キャンセル」の確認を使わない（押すと何が起きるかを書いた確認の画面を使う）", () => {
+test("R-31 画面に、ブラウザの「OK／キャンセル」の確認を使わない（押すと何が起きるかを書いた確認の画面を使う）", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   assert.equal(/\bconfirm\(/.test(app), false);
 });

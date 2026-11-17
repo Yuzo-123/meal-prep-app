@@ -22,7 +22,7 @@ test("今日がその週なら曜日を返し、週の外なら null", () => {
   assert.equal(M.todayDay("2026-11-16", new Date(2026, 10, 14)), null);
 });
 
-test("形の違うデータは理由つきで断る", () => {
+test("R-12 形の違うデータは理由つきで断る", () => {
   assert.ok(M.validateBundle({}).length > 0);
   assert.ok(M.validateBundle([]).length > 0);
   assert.deepEqual(M.validateBundle(bundle()), []);
@@ -36,7 +36,7 @@ test("取り込むと、その週が家庭の区切りの下に入って表示�
   assert.ok(s.households.home.weeks["2026-11-16"]);
 });
 
-test("チェックの鍵は中身から作るので、取り込み直しても残る", () => {
+test("R-10 チェックの鍵は中身から作るので、取り込み直しても残る", () => {
   let s = M.importBundle(M.emptyState(), bundle());
   s = M.toggleCheck(s, "2026-11-16", "buy:にんじん", true);
   const again = bundle();
@@ -226,7 +226,7 @@ test("表示する週は、今日を含む週。土日は次の月曜の週。�
   assert.equal(M.pickCurrentWeek([], new Date()), null);
 });
 
-test("サーバーの週や品の一覧が読めない形なら、ほかの週は取り込み、読めなかったものを返す", () => {
+test("R-12 サーバーの週や品の一覧が読めない形なら、ほかの週は取り込み、読めなかったものを返す", () => {
   const good = { week_start: "2026-11-16", updated_at: "t1", bundle: bundle() };
   const bad = { week_start: "2026-11-23", updated_at: "t1", bundle: { ...bundle(), week_start: "2026-11-23", version: 2 } };
   const r = M.mergeServerWeeks(M.emptyState(), [bad, good], new Date(2026, 10, 18));
@@ -238,7 +238,7 @@ test("サーバーの週や品の一覧が読めない形なら、ほかの週�
   assert.equal(c.state, r.state);
 });
 
-test("サーバーから来た週は、新しくなったものだけ取り込み、チェックは残る", () => {
+test("R-22 サーバーから来た週は、新しくなったものだけ取り込み、チェックは残る", () => {
   let s = M.importBundle(M.emptyState(), bundle());
   s = M.toggleCheck(s, "2026-11-16", "buy:にんじん", true);
   const row = { week_start: "2026-11-16", updated_at: "t1", bundle: { ...bundle(), memo: "サーバー版", photo_ids: ["r1"] } };
@@ -253,7 +253,7 @@ test("サーバーから来た週は、新しくなったものだけ取り込�
   assert.deepEqual(r.changed, ["2026-11-16"]);
 });
 
-test("ログアウトでは、取り直せるもの（サーバーの週・品の一覧）だけ消え、チェックとメモとファイルの週は残る", () => {
+test("R-11 ログアウトでは、取り直せるもの（サーバーの週・品の一覧）だけ消え、チェックとメモとファイルの週は残る", () => {
   let s = M.importBundle(M.emptyState(), { ...bundle(), week_start: "2026-11-09" }); // ファイルから入れた週
   const row = { week_start: "2026-11-16", updated_at: "t1", bundle: { ...bundle(), memo: "サーバー版" } };
   s = M.mergeServerWeeks(s, [row], new Date(2026, 10, 18)).state;
@@ -282,7 +282,7 @@ test("前に受け取ったときの印は、サーバーから来た週と品�
   assert.deepEqual(M.serverStamps(s), { weeks: { "2026-11-16": "t1" }, catalog: "c1" });
 });
 
-test("サーバーから来た品の一覧も、新しくなったときだけ入れ替える", () => {
+test("R-22 サーバーから来た品の一覧も、新しくなったときだけ入れ替える", () => {
   let r = M.mergeServerCatalog(M.emptyState(), { updated_at: "c1", data: cat() });
   assert.equal(r.changed, true);
   assert.equal(M.catalog(r.state).dishes.length, 3);
@@ -356,14 +356,14 @@ test("手順が済むと、作る品のチェックが自動で付く", () => {
   assert.equal(M.autoCook(plain, wk, bundle()), plain); // 段取りが無い週は何も変えない
 });
 
-test("アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
+test("R-30 アプリの版と、端末に覚えさせるファイルの版がそろっている", () => {
   const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
   const v = app.match(/APP_VERSION = "([^"]+)"/)[1];
   assert.ok(sw.includes(`"mealprep-${v}"`), "service-worker.js の CACHE を APP_VERSION に合わせる");
 });
 
-test("覚えさせるファイルの一覧に、実在しないファイルが無い", () => {
+test("R-30 覚えさせるファイルの一覧に、実在しないファイルが無い", () => {
   const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8");
   const list = sw.match(/const ASSETS = \[([\s\S]*?)\];/)[1].match(/"\.\/[^"]*"/g).map((s) => s.slice(3, -1)).filter(Boolean);
   for (const f of list) assert.doesNotThrow(() => readFileSync(new URL("../" + f, import.meta.url)), f);
@@ -378,13 +378,13 @@ test("買い物を料理で絞る一覧は、出てくる順に料理名と品�
   assert.equal(M.shopDishes(w).reduce((n, d) => n + d.count, 0), M.shoppingRows(w).reduce((n, r) => n + (r.dishes || []).length, 0));
 });
 
-test("注文には、1 日の型（夜 3 品・朝は汁物を回す）が必ず入る", () => {
+test("R-02 注文には、1 日の型（夜 3 品・朝は汁物を回す）が必ず入る", () => {
   const r = M.buildRequest(M.emptyState(), [], {}, new Date(2026, 10, 21));
   assert.ok(r.text.includes("1 日の型: 夜は 汁物・主菜（肉か魚）・副菜 の 3 品"));
   assert.deepEqual(r.data.day_shape.dinner, ["汁物", "主菜（肉か魚）", "副菜"]);
 });
 
-test("今回ほしい分: 期間・品数・枠が注文に入り、枠を超えては選べない", () => {
+test("R-05 今回ほしい分: 期間・品数・枠が注文に入り、枠を超えては選べない", () => {
   const dishes = [
     { id: "s1", name: "みそ汁", kind: "作りおき", group: "スープ", print_page: 1 },
     { id: "s2", name: "豚汁", kind: "作りおき", group: "スープ", print_page: 2 },
@@ -411,7 +411,7 @@ test("今回ほしい分: 期間・品数・枠が注文に入り、枠を超え
   assert.ok(!r.text.includes("1 日の型")); // 基本の型（朝 1・夜 3）から変えたら、型の一文は添えない
 });
 
-test("今回ほしい分: 1 回に出す品数から、この期間に作る品の数が自動で出る", () => {
+test("R-01 今回ほしい分: 1 回に出す品数から、この期間に作る品の数が自動で出る", () => {
   // 基本: 月〜金の 5 日・夜は 汁物 1＋おかず 2・朝は夜の汁物を回す → 汁物 2 品・おかず 4 品
   assert.deepEqual(M.needSlots({ from: "2026-11-23", to: "2026-11-27" }), { days: 5, cookDays: 5, soup: 2, dish: 4, breakfast: 1, dinner: 3 });
   // 3 日なら、同じ品を 3 日続けて出せるので 汁物 1・おかず 2
@@ -489,7 +489,7 @@ test("アプリの中で組む: 作る回数と買い物の量を、食べる回
   assert.equal(P.fmtFrac(1, 3), "1/3");
 });
 
-test("アプリの中で組む: 選んだ品は必ず入り、前の週の品は後回しになる", () => {
+test("R-03 アプリの中で組む: 選んだ品は必ず入り、前の週の品は後回しになる", () => {
   let s = planState();
   const first = P.autoPlan(s, ["m1", "s2"], { need: NEED }, rng0);
   const ids = first.cook_sunday.map((c) => c.id);
@@ -506,7 +506,7 @@ test("アプリの中で組む: 選んだ品は必ず入り、前の週の品は
   assert.deepEqual(only.cook_sunday.map((c) => c.id), ["m1"]);
 });
 
-test("アプリの中で組む: 日持ちを超える日は、冷凍の注意が付く", () => {
+test("R-04 アプリの中で組む: 日持ちを超える日は、冷凍の注意が付く", () => {
   const b = P.autoPlan(planState(), [], { need: NEED }, rng0);
   // 冷蔵 3〜4 日の品を木・金に出すと、金曜（日曜から 5 日後）が超える
   assert.ok(b.notes.some((n) => n.includes("金曜の分が冷蔵 3〜4日 を超えます")));
