@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.5"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.6"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -734,6 +734,7 @@ function currentRequest() {
 
 let photosToday = 0;   // 今日送った冷蔵庫の写真の枚数（冷蔵庫タブで数えたもの）
 let lastRequest = null; // サーバーにある、いちばん新しい注文
+const NEED_LOGIN = "頼むには、この画面の上でログインします";
 let pendingReq = null;  // 送りかけの注文の番号。届いたか分からずに押し直したとき、同じ中身なら同じ番号で送る（2 件にしない）
 
 function renderRequest() {
@@ -761,8 +762,9 @@ function renderRequest() {
   $("#reqphotos").textContent = photosToday
     ? `今日は冷蔵庫の写真を ${photosToday} 枚送っています。この写真を使って組みます。`
     : "冷蔵庫の写真を送っておくと、家にある物を使い切る献立になります。";
-  $("#reqsend").disabled = !cloudUser;
-  if (!cloudUser) $("#reqmsg").textContent = "頼むには、この画面の上でログインします";
+  // ログイン前でも押せる（押すとログイン欄へ案内する）。ログインしたら案内の文は消す
+  if (!cloudUser) $("#reqmsg").textContent = NEED_LOGIN;
+  else if ($("#reqmsg").textContent === NEED_LOGIN) $("#reqmsg").textContent = "";
   const box = $("#reqstatus");
   box.hidden = !lastRequest;
   if (lastRequest) {
@@ -806,7 +808,13 @@ async function loadLastRequest() {
 
 async function sendRequest() {
   const btn = $("#reqsend");
-  if (!cloudUser || !cloudUser.household) { $("#reqmsg").textContent = "頼むには、この画面の上でログインします"; return; }
+  if (!cloudUser || !cloudUser.household) {
+    // ログイン欄まで動かして、メールアドレスの欄に合わせる。選んだ品はそのまま残る
+    $("#reqmsg").textContent = NEED_LOGIN;
+    $("#fr-login").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#login-email").focus({ preventScroll: true });
+    return;
+  }
   btn.disabled = true;
   $("#reqmsg").textContent = "送っています…";
   try {
@@ -1011,6 +1019,8 @@ function init() {
     });
   }));
   $("#logsave").addEventListener("click", saveLog);
+  // 書き換えたら、保存するまで「まだ保存していません」にする（前の「保存済み」が残らないように）
+  ["#log-min", "#log-good", "#log-bad"].forEach((id) => $(id).addEventListener("input", () => { $("#logsaved").textContent = "まだ保存していません"; }));
   $("#file").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (f) takeIn(await f.text());
