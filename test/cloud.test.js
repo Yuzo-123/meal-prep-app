@@ -144,3 +144,47 @@ test("ログインの更新でサーバーが不調（5xx）なら、ログイ�
     delete globalThis.localStorage;
   }
 });
+
+test("失敗の文は、使う人の言葉にする（アプリの日本語はそのまま、サーバーの英語や番号は出さない）", () => {
+  assert.equal(C.friendlyError(new Error("サーバーにつながりません（電波を確かめてください）")), "サーバーにつながりません（電波を確かめてください）");
+  const e401 = Object.assign(new Error("JWT expired"), { status: 401 });
+  assert.match(C.friendlyError(e401), /ログインし直して/);
+  const e503 = Object.assign(new Error("Service Unavailable"), { status: 503 });
+  assert.match(C.friendlyError(e503), /もう一度試して/);
+  assert.doesNotMatch(C.friendlyError(new Error("relation does not exist")), /relation/);
+  assert.match(C.friendlyError(null), /もう一度試して/);
+});
+
+test("同じ週の注文が組まれている途中（409）なら、待ってほしいと伝える", async () => {
+  const s = fakeServer(() => [409, { code: "23505", message: "duplicate key value violates unique constraint" }]);
+  try {
+    await assert.rejects(C.sendRequest(session, "home", { week_start: "2026-11-23" }, "req-2"), /いま組んでいるところ/);
+  } finally { s.restore(); }
+});
+
+test("作り直しの取り消しは、手付かず（new）の注文だけを cancelled にする", async () => {
+  const s = fakeServer(() => [200, [{ id: "req-1", status: "cancelled" }]]);
+  try {
+    assert.equal(await C.cancelRequest(session, "req-1"), true);
+    const c = s.calls[0];
+    assert.equal(c.method, "PATCH");
+    assert.match(c.url, /id=eq\.req-1&status=eq\.new/);
+    assert.equal(JSON.parse(c.body).status, "cancelled");
+    assert.match(c.headers.Prefer, /return=representation/);
+  } finally { s.restore(); }
+  const t = fakeServer(() => [200, []]);
+  try {
+    assert.equal(await C.cancelRequest(session, "req-1"), false, "組み始めていたら取り消せない");
+  } finally { t.restore(); }
+});
+
+test("画面の版の番号（APP_VERSION）と控えの番号（CACHE）がそろっている", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8").match(/APP_VERSION = "([\d.]+)"/)[1];
+  const sw = readFileSync(new URL("../service-worker.js", import.meta.url), "utf8").match(/mealprep-([\d.]+)/)[1];
+  assert.equal(app, sw);
+});
+
+test("画面に、ブラウザの「OK／キャンセル」の確認を使わない（押すと何が起きるかを書いた確認の画面を使う）", () => {
+  const app = readFileSync(new URL("../src/js/app.js", import.meta.url), "utf8");
+  assert.equal(/\bconfirm\(/.test(app), false);
+});

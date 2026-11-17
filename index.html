@@ -27,6 +27,7 @@
     <div class="grow"><h1>日曜につくりおき</h1><p id="headline"></p></div>
     <button class="gear" data-go="set" aria-label="設定">設定</button>
   </header>
+  <p class="offline" id="offline" role="status" hidden>電波がありません。この端末にあるぶんで動いています</p>
 
   <section class="view" id="v-menu">
     <div class="needweek">
@@ -36,7 +37,7 @@
       <div id="panels"></div>
       <button class="btn ghost wide" data-go="plan">次の週の献立を作る</button>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。ログインすると、献立が自動で届きます。</p><button class="btn" data-go="plan">ログインする</button> <button class="btn ghost" data-go="plan">献立を作る</button></div>
+    <div class="blank"><p class="blanktext"></p><button class="btn blankgo" type="button"></button></div>
   </section>
 
   <section class="view" id="v-plan">
@@ -142,7 +143,7 @@
       <details><summary>買わなくてよいもの</summary><ul id="skiplist"></ul></details>
       <button class="reset" data-reset="buy,pantry,none">買い物のチェックを外す</button>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+    <div class="blank"><p class="blanktext"></p><button class="btn blankgo" type="button"></button></div>
   </section>
 
   <section class="view" id="v-cook">
@@ -189,7 +190,7 @@
       <p class="empty" id="sunempty" hidden>この週には、まだ日曜の段取りが入っていません</p>
       <button class="reset" data-reset="cook,step,mat,before,cut">料理のチェックを外す</button>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+    <div class="blank"><p class="blanktext"></p><button class="btn blankgo" type="button"></button></div>
   </section>
 
   <section class="view" id="v-note">
@@ -208,7 +209,7 @@
         <div class="formfoot"><button class="btn" id="logsave">記録を保存する</button><span id="logsaved"></span></div>
       </div>
     </div>
-    <div class="blank"><p>まだ週のデータが入っていません。</p><button class="btn" data-go="set">週のデータを取り込む</button></div>
+    <div class="blank"><p class="blanktext"></p><button class="btn blankgo" type="button"></button></div>
   </section>
 
   <section class="view" id="v-set">
@@ -236,6 +237,11 @@
 
 <button type="button" id="newver" class="newver" hidden>新しい版があります。押すと切り替わります</button>
 <div id="toast" role="status" aria-live="polite"></div>
+<dialog class="ask" id="ask" aria-labelledby="ask-title">
+  <p class="asktitle" id="ask-title"></p>
+  <p class="hint" id="ask-body"></p>
+  <div class="askbtns"><button type="button" class="btn" id="ask-ok"></button><button type="button" class="btn ghost" id="ask-no"></button></div>
+</dialog>
 
 <nav class="tabs"><div>
   <button data-tab="plan"><span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.7a2.5 2.5 0 1 1 3.7 2.2c-.8.5-1.3 1-1.3 2M12 16.7v.1"/></svg><small class="badge" id="tfridge"></small></span><b>何つくる？</b></button>

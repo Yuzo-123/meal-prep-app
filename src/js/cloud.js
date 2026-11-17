@@ -54,6 +54,16 @@ export function keepSession(json) {
   };
 }
 
+// 失敗を、使う人の言葉にする。アプリで書いた日本語の文はそのまま。サーバーの英語の文や番号は出さない。
+export function friendlyError(err) {
+  const msg = (err && err.message) || "";
+  const status = err && err.status;
+  if (status === 401 || status === 403) return "ログインの期限が切れました。ログインし直してください";
+  if (status >= 500) return "サーバーが混み合っています。少し待ってから、もう一度試してください";
+  if (/[ぁ-んァ-ヶ一-龠]/.test(msg)) return msg;
+  return "うまくいきませんでした。少し待ってから、もう一度試してください";
+}
+
 // ---------- 端末の中のログイン状態 ----------
 
 export function getSession() {
@@ -69,9 +79,10 @@ function setSession(s) {
 
 // ---------- サーバーへの問い合わせ ----------
 
-async function call(path, { method = "GET", body, token, type = "application/json" } = {}) {
+async function call(path, { method = "GET", body, token, type = "application/json", prefer } = {}) {
   const headers = { apikey: SUPABASE_KEY };
   if (token) headers.Authorization = "Bearer " + token;
+  if (prefer) headers.Prefer = prefer;
   if (body !== undefined) headers["Content-Type"] = type;
   let res;
   try {
@@ -168,13 +179,29 @@ export async function sendRequest(session, household, data, id = crypto.randomUU
       Prefer: "return=representation,resolution=ignore-duplicates" },
     body: JSON.stringify({ id, household, week_start, payload }),
   }).catch(() => { throw new Error("サーバーにつながりません（電波を確かめてください）"); });
-  if (!res.ok) throw new Error(res.status === 404 ? "頼む仕組みが、まだサーバーに入っていません" : "頼めませんでした（HTTP " + res.status + "）");
+  if (!res.ok) {
+    // 409: 同じ週の注文が、もう組まれている途中（同じ週で進行中の注文は 1 件まで。supabase/005）
+    const err = new Error(res.status === 404 ? "頼む仕組みが、まだサーバーに入っていません"
+      : res.status === 409 ? "この週の献立は、いま組んでいるところです。届いてから、もう一度頼んでください"
+      : "頼めませんでした（番号 " + res.status + "）。少し待ってから、もう一度試してください");
+    err.status = res.status === 409 ? undefined : res.status;
+    throw err;
+  }
   const rows = await res.json();
   if (rows && rows.length) return rows[0];
   // もう届いていた（前の送信が入っていた）。その注文を読み直して返す
   const again = await call(`/rest/v1/requests?select=*&id=eq.${encodeURIComponent(id)}`, { token: session.access_token });
   if (!again || !again.length) throw new Error("頼めたか確かめられませんでした。少し待ってから、もう一度押してください");
   return again[0];
+}
+
+// 作り直すとき、まだ手を付けられていない（new の）前の注文を取り消す。組み始めた注文は取り消せない（false を返す）。
+export async function cancelRequest(session, id) {
+  const rows = await call(`/rest/v1/requests?id=eq.${encodeURIComponent(id)}&status=eq.new`, {
+    method: "PATCH", token: session.access_token, prefer: "return=representation",
+    body: JSON.stringify({ status: "cancelled", status_note: "作り直したので取り消し" }),
+  });
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 export async function latestRequest(session, household) {

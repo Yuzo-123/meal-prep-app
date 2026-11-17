@@ -4,7 +4,7 @@ import { load, save, pref } from "./store.js";
 import * as C from "./cloud.js";
 import * as P from "./planner.js";
 
-export const APP_VERSION = "0.12.6"; // service-worker.js の CACHE と同じ番号にする
+export const APP_VERSION = "0.12.7"; // service-worker.js の CACHE と同じ番号にする
 
 let state = load();
 const $ = (q, r = document) => r.querySelector(q);
@@ -45,6 +45,51 @@ function toast(msg, undo) {
   toast.timer = setTimeout(() => t.classList.remove("on", "act"), undo ? 6000 : 2600);
 }
 
+// 確認の小さな画面。ボタンには「押すと何が起きるか」を書く。押した方が ok なら true
+function ask({ title, body = "", ok, no }) {
+  const d = $("#ask");
+  $("#ask-title").textContent = title;
+  $("#ask-body").textContent = body;
+  $("#ask-body").hidden = !body;
+  $("#ask-ok").textContent = ok;
+  $("#ask-no").textContent = no;
+  return new Promise((resolve) => {
+    const end = (v) => { d.close(); $("#ask-ok").onclick = $("#ask-no").onclick = d.oncancel = null; resolve(v); };
+    $("#ask-ok").onclick = () => end(true);
+    $("#ask-no").onclick = () => end(false);
+    d.oncancel = (e) => { e.preventDefault(); end(false); };
+    d.showModal();
+  });
+}
+
+// 失敗を、使う人の言葉で el に出す。retry を渡すと「もう一度試す」を付ける
+function showError(el, err, retry) {
+  el.textContent = C.friendlyError(err);
+  if (!retry) return;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "linkbtn";
+  b.textContent = "もう一度試す";
+  b.addEventListener("click", () => { el.textContent = ""; retry(); });
+  el.append(" ", b);
+}
+
+// 電波が無いあいだは、上に印を出す
+function renderOnline() { $("#offline").hidden = navigator.onLine !== false; }
+
+// 週のデータが無いときの案内。ボタンは 1 つだけで、ログイン前はログイン欄へ、ログイン後は「何つくる？」へ
+function renderBlank() {
+  $$(".blanktext").forEach((p) => {
+    p.textContent = cloudUser ? "まだ献立がありません。「何つくる？」で頼むと、ここに出ます。"
+      : "まだ献立がありません。家族のログインをすると、献立が届きます。";
+  });
+  $$(".blankgo").forEach((b) => { b.textContent = cloudUser ? "献立を頼みに行く" : "ログインする"; });
+}
+function goBlank() {
+  showTab("plan");
+  if (!cloudUser) { $("#fr-login").scrollIntoView({ block: "start" }); $("#login-email").focus({ preventScroll: true }); }
+}
+
 // キャラクターの絵: 読めたら顔を出し、読めなければ外す（画面のファイルに動きを直書きしないため、ここで付ける）
 function mascot(img, onOk) {
   const done = () => { if (img.naturalWidth) { if (onOk) onOk(); } else img.remove(); };
@@ -60,6 +105,7 @@ function showTab(name) {
   window.scrollTo(0, 0);
   keepAwake(name === "cook");
   if (name === "plan") { renderRequest(); loadLastRequest(); }
+  if (name === "note") seeNotes();
 }
 
 // ---------- 献立 ----------
@@ -489,6 +535,19 @@ function refreshChecks() {
 }
 
 // ---------- メモと記録 ----------
+// 下のタブの丸: 数字は「残り」だけ（買い物・料理）。メモは、新しい注意が来たときに点を出し、開いたら消す
+const noteSig = (w) => (w && (w.notes || []).length ? `${w.week_start}:${w.notes.join("\n")}` : "");
+function renderNoteDot(w) {
+  const sig = noteSig(w);
+  if ($("#v-note").classList.contains("on")) return seeNotes(); // いま見ている
+  $("#tnote").classList.toggle("dot", !!sig && sig !== pref("notesSeen"));
+}
+function seeNotes() {
+  const sig = noteSig(M.currentWeek(state));
+  if (sig) pref("notesSeen", sig);
+  $("#tnote").classList.remove("dot");
+}
+
 function renderNote(w) {
   $("#notes").innerHTML = (w.notes || []).map((n) => `<li>${esc(n)}</li>`).join("") || "<li>なし</li>";
   const log = M.getLog(state, w.week_start);
@@ -564,7 +623,7 @@ function takeIn(text) {
       if (!ok) return;
       toast(`${M.weekSpan(obj.week_start)} の週を取り込みました`);
     }
-  } catch (e) { toast(e.message); return; }
+  } catch (e) { toast(C.friendlyError(e)); return; }
   $("#paste").value = "";
   renderAll();
   showTab("menu");
@@ -679,6 +738,18 @@ function renderPlan() {
       <span class="body"><b>${esc(d.name)}</b><small>${esc([d.section, keep].filter(Boolean).join("・"))}${d.kid_caution ? `<em>取り分け注意</em>` : ""}</small></span>
       <span class="amt pg">P.${esc(d.print_page)}</span></label>`;
   }).join("");
+  // 0 品のとき: どの条件を外すと何品になるかを出し、押すと外す
+  if (!shown.length) {
+    const outs = [];
+    if (pick.group) outs.push([`「${pick.group}」を外すと ${M.filterDishes(cat.dishes, { kind: pick.kind, group: "", kidOk: pick.kidOk }).length} 品`, "group"]);
+    if (pick.kidOk) outs.push([`「取り分け注意の品を除く」を外すと ${M.filterDishes(cat.dishes, { kind: pick.kind, group: pick.group, kidOk: false }).length} 品`, "kid"]);
+    $("#picklist").innerHTML = `<p class="empty">この条件に合う品はありません</p>` +
+      outs.map(([t, k]) => `<button type="button" class="btn ghost wide" data-unfilter="${k}">${esc(t)}</button>`).join("");
+    $$("#picklist [data-unfilter]").forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset.unfilter === "group") pick.group = ""; else pick.kidOk = false;
+      renderPlan();
+    }));
+  }
   $$("#picklist .row").forEach((row) => $("input", row).addEventListener("change", (e) => {
     const id = row.dataset.pick;
     if (e.target.checked && !needDecided) {
@@ -779,7 +850,13 @@ function renderRequest() {
     const label = { new: mine && mine.draft ? (M.sundayPlan(mine).has ? "献立・買い物・レシピは、もう出ています" : "献立と買い物は、もう出ています。日曜の段取りと詳しい手順は、あとから届きます") : "頼みました。献立はこれから組むので、すぐには変わりません。できあがると、献立・買い物・料理が入れ替わります",
       working: mine && mine.draft ? (M.sundayPlan(mine).has ? "献立・買い物・レシピは、もう出ています。いま、冷蔵庫の写真を反映しています" : "献立と買い物は、もう出ています。いま、日曜の段取りを足しています") : "いま組んでいます。できあがると、献立・買い物・料理が入れ替わります", done: "届きました",
       failed: "組めませんでした", cancelled: "取り消されました" }[lastRequest.status] || lastRequest.status;
-    box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b><br>${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>${see}`;
+    // 受け付けた → 組んでいる → 届いた の 3 段。組めなかった・取り消したときは段を出さず、もう一度頼めるようにする
+    const stage = { new: 1, working: 2, done: 3 }[lastRequest.status] || 0;
+    const steps = stage ? `<ol class="stages">${["受け付けた", "組んでいる", "届いた"].map((t, i) =>
+      `<li class="${i + 1 < stage ? "past" : i + 1 === stage ? "now" : ""}">${t}</li>`).join("")}</ol>` : "";
+    const wait = stage && stage < 3 ? `<p class="hint">待つあいだは、ほかのタブを使っていて大丈夫です。</p>` : "";
+    const again = lastRequest.status === "failed" ? `<div class="formfoot"><button type="button" class="btn ghost" data-again>もう一度頼む</button></div>` : "";
+    box.innerHTML = `<p class="hint"><b>${esc(M.weekSpan(lastRequest.week_start))} の週の注文（${esc(at)}）</b></p>${steps}<p class="hint">${esc(label)}${lastRequest.status_note ? `：${esc(lastRequest.status_note)}` : ""}</p>${wait}${see}${again}`;
   }
 }
 
@@ -823,7 +900,8 @@ async function sendRequest() {
     let draft = null;
     if (P.canAutoPlan(state)) {
       const old = M.home(state).weeks[r.data.week_start];
-      if (old && !old.draft && !confirm(`${M.weekSpan(r.data.week_start)} の週は、もう献立があります。作り直しますか？（いまの献立は、新しいものに置き換わります）`)) {
+      if (old && !old.draft && !(await ask({ title: `${M.weekSpan(r.data.week_start)} の週は、もう献立があります`,
+        body: "作り直すと、いまの献立は新しいものに置き換わります。", ok: "作り直す", no: "いまのまま" }))) {
         $("#reqmsg").textContent = ""; btn.disabled = false; return;
       }
       try { draft = P.autoPlan(state, [...pick.ids], { need, fillRest: $("#fillrest").checked }); } catch (e) { draft = null; }
@@ -831,6 +909,11 @@ async function sendRequest() {
     const data = { ...r.data, photo_day: C.dayFolder(), photo_count: photosToday, text: r.text };
     const key = JSON.stringify(data);
     if (!pendingReq || pendingReq.key !== key) pendingReq = { key, id: crypto.randomUUID() };
+    // 作り直し: 同じ週の前の注文がまだ手付かず（new）なら、先に取り消す。組み始めていたら、サーバーが断る（409）
+    try {
+      const prev = await C.latestRequest(session, cloudUser.household);
+      if (prev && prev.id !== pendingReq.id && prev.week_start === r.data.week_start && prev.status === "new") await C.cancelRequest(session, prev.id);
+    } catch (e) { /* 取り消せなくても、頼むのは続ける（サーバーが断れば、その文を出す） */ }
     lastRequest = await C.sendRequest(session, cloudUser.household, { ...data, ...(draft ? { draft } : {}) }, pendingReq.id);
     pendingReq = null;
     if (draft) lastRequest.draft = draft;
@@ -852,7 +935,7 @@ async function sendRequest() {
       window.scrollTo(0, 0);
     }
   } catch (e) {
-    $("#reqmsg").textContent = e.message;
+    showError($("#reqmsg"), e, sendRequest);
   }
   btn.disabled = false;
 }
@@ -884,17 +967,18 @@ async function refreshFridge() {
   $("#fr-login").hidden = !!cloudUser;
   $("#fr-main").hidden = !cloudUser;
   $("#logout").hidden = !cloudUser;
+  renderBlank();
   if (!cloudUser) return;
   try {
     if (!cloudUser.household) cloudUser.household = pref("household", await C.myHousehold(session));
     const n = await C.countToday(session, cloudUser.household);
     $("#fr-count").textContent = n ? `今日は ${n} 枚送っています` : "今日はまだ送っていません";
-    $("#tfridge").textContent = n ? n : "";
+    $("#tfridge").classList.toggle("dot", n > 0); // 今日、冷蔵庫の写真を送った印（枚数は画面の中に出す）
     photosToday = n;
     renderRequest();
     loadLastRequest(); // ログインの確認が済んでから、いちばん新しい注文を読み直す
   } catch (e) {
-    $("#fr-count").textContent = e.message;
+    showError($("#fr-count"), e, refreshFridge);
   }
   syncFromServer();
 }
@@ -910,7 +994,7 @@ async function doLogin(e) {
     await refreshFridge();
     toast("ログインしました");
   } catch (err) {
-    $("#loginmsg").textContent = err.message;
+    showError($("#loginmsg"), err);
   }
   btn.disabled = false;
 }
@@ -932,7 +1016,7 @@ async function sendShot(box, f, job) {
     box.className = "shot fail";
     $("span", box).textContent = "送れませんでした（押すと送り直す）";
     box.onclick = async () => { if (await sendShot(box, f, job) !== false) refreshFridge(); };
-    toast(err.message);
+    toast(C.friendlyError(err));
   }
   return true;
 }
@@ -959,7 +1043,7 @@ function renderAll() {
   }
   $("#headline").textContent = `${M.weekSpan(w.week_start)}　${w.memo || ""}`;
   $("#bookline").textContent = w.book ? `作り方は本『${w.book}』の各ページ（P.）を開いてください` : "";
-  $("#tnote").textContent = (w.notes || []).length || "";
+  renderNoteDot(w);
   renderMenu(w);
   renderShop(w);
   renderCook(w);
@@ -1003,6 +1087,11 @@ function showCover() {
 function init() {
   showCover();
   $$(".blank").forEach((b) => b.prepend(mascotImg("mascot")));
+  $$(".blankgo").forEach((b) => b.addEventListener("click", goBlank));
+  renderBlank();
+  renderOnline();
+  window.addEventListener("online", () => { renderOnline(); refreshFridge(); });
+  window.addEventListener("offline", renderOnline);
   $$("nav.tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   $$("[data-reset]").forEach((b) => b.addEventListener("click", () => {
     const w = M.currentWeek(state);
@@ -1034,6 +1123,7 @@ function init() {
     if (b) switchWeek(b.dataset.week);
   });
   $("#reqstatus").addEventListener("click", (e) => {
+    if (e.target.closest("[data-again]")) { $("#reqsend").scrollIntoView({ block: "center", behavior: "smooth" }); return; }
     const b = e.target.closest("[data-seeweek]");
     if (!b) return;
     switchWeek(b.dataset.seeweek);
@@ -1069,7 +1159,9 @@ function init() {
     if (files.length) sendPhotos(files);
   });
   $("#logout").addEventListener("click", async () => {
-    if (!confirm("ログアウトすると、この端末から週の献立・品の一覧・料理の写真の控えを消します（もう一度ログインすれば取り直せます）。買い物や料理のチェックとメモの記録は残ります。")) return;
+    if (!(await ask({ title: "ログアウトしますか？",
+      body: "この端末から、週の献立・品の一覧・料理の写真の控えを消します（もう一度ログインすれば取り直せます）。買い物や料理のチェックとメモの記録は残ります。",
+      ok: "ログアウトする", no: "やめる" }))) return;
     await C.signOut();
     cloudUser = null;
     pref("household", "");
@@ -1092,7 +1184,7 @@ function init() {
   if (mk) mascot(mk, () => mk.parentNode.classList.add("face"));
   renderAll();
   const last = pref("tab") === "fridge" ? "plan" : pref("tab"); // 前の版の「冷蔵庫」は「何つくる？」へ
-  showTab(M.currentWeek(state) ? last || "menu" : "set");
+  showTab(M.currentWeek(state) ? last || "menu" : "plan"); // 週が無いとき（初めて開いたとき）は、ログインと頼む画面から
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     // 新しい版が届いたら、開き直して新しい画面にする。
     // ただし書きかけ・選びかけ・写真の送信中は、開き直すと消えるので、知らせだけ出して、押したら切り替える

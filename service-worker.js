@@ -1,6 +1,6 @@
 // 電波なしでも開くための仕掛け。画面のファイルを端末に覚えさせる。
 // 画面を直したら、下の番号と src/js/app.js の APP_VERSION を一緒に上げる（上げないと古い画面が出続ける）。
-const CACHE = "mealprep-0.12.6";
+const CACHE = "mealprep-0.12.7";
 // 無いと画面が動かないもの（1 つでも取れなければ、この版は入れない）
 const ASSETS = [
   "./", "./index.html", "./manifest.json", "./src/css/styles.css",
@@ -8,9 +8,12 @@ const ASSETS = [
 ];
 // 無くても動くもの（取れなくても、ほかは入れる）
 const OPTIONAL = ["./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-180.png", "./icons/mascot.png"];
+// 控えを作るときは、ブラウザが手元に持っている古いファイル（公開先は 10 分ほど持たせる）を使わず、必ずサーバーから取り直す。
+// これをしないと、番号を上げても中身が前の版のまま控えられることがある（2026-11-17 に確認用の画面で起きた）
+const fresh = (u) => new Request(u, { cache: "reload" });
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) =>
-    c.addAll(ASSETS).then(() => Promise.all(OPTIONAL.map((u) => c.add(u).catch(() => {}))))
+    c.addAll(ASSETS.map(fresh)).then(() => Promise.all(OPTIONAL.map((u) => c.add(fresh(u)).catch(() => {}))))
   ));
   self.skipWaiting();
 });

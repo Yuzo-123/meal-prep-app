@@ -66,6 +66,17 @@ def main():
     results.append(("ログインなしで注文を読む", empty, "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:40])))
     code, text = call("POST", "/rest/v1/requests", json.dumps({"household": "home", "week_start": "2000-01-03", "payload": {}}).encode())
     results.append(("ログインなしで献立を頼む", code >= 400, "HTTP %d" % code))
+    # 注文の取り消し（005）。ログインなしでは 1 件も書き換わらないこと（空の返事か、断られる）
+    req = urllib.request.Request(URL + "/rest/v1/requests?status=eq.new", method="PATCH",
+                                 data=json.dumps({"status": "cancelled"}).encode(),
+                                 headers={"apikey": KEY, "Authorization": "Bearer " + KEY,
+                                          "Content-Type": "application/json", "Prefer": "return=representation"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            code, text = r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        code, text = e.code, e.read().decode("utf-8", "replace")
+    results.append(("ログインなしで注文を取り消す", code >= 400 or text.strip() == "[]", "HTTP %d・%s" % (code, "0 件" if text.strip() == "[]" else text[:40])))
 
     ok = True
     for name, passed, detail in results:
